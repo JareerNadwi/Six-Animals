@@ -97,8 +97,8 @@
       <div class="sub">Since-last-seen tracking for a 6-animal dice draw — logged plainly, no promises attached.</div>
     </header>
     <div class="panel">
-      <div class="panel-title">Seed the board <span class="note">at least 20 rounds required to start</span></div>
-      <div class="hint">Paste at least 20 past round results, one per line — each token is a letter + multiplier (2–6), e.g. <code>l2 w3</code> means Lion showed on 2 dice, Wolf on 3. Codes: l=Lion, t=Tiger, f=Fox, w=Wolf, b=Bear, p=Panda. Numbers across one line can't total more than 6 — there are only 6 dice.</div>
+      <div class="panel-title">Seed the board</div>
+      <div class="hint">Paste past round results, one per line — each token is a letter + multiplier (2–6), e.g. <code>l2 w3</code> means Lion showed on 2 dice, Wolf on 3. Codes: l=Lion, t=Tiger, f=Fox, w=Wolf, b=Bear, p=Panda. Numbers across one line can't total more than 6 — there are only 6 dice.</div>
       <textarea id="seedInput" rows="20" placeholder="l2 w3&#10;t3 p3&#10;b6&#10;... (20+ lines)"></textarea>
       <div class="error" id="seedError"></div>
       <div class="row center">
@@ -144,11 +144,25 @@
     </div>
 
     <div class="panel">
+      <div class="panel-title">Multiplier summary <span class="note">how many rounds matched each pattern</span></div>
+      <table id="multiplierTable">
+        <thead><tr><th>Pattern</th><th>Rounds</th></tr></thead>
+        <tbody id="multiplierBody"></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
       <div class="panel-title">Points by depth <span class="note">each animal chosen costs &minus;1; a hit additionally pays 2x&rarr;2.7 · 3x&rarr;3.6 · 4x&rarr;4.5 · 5x&rarr;5.4 · 6x&rarr;6.3</span></div>
       <div class="stat-grid" id="pointsGrid"></div>
       <div class="row center" style="margin-top:16px;">
         <button class="ghost" onclick="exportCSV()">Export ledger as CSV</button>
+        <button class="ghost" id="clearRoundsBtn" onclick="askClearRounds()">Clear rounds (keep current picks)</button>
         <button class="ghost" id="resetBtn" onclick="askReset()">Reset board</button>
+      </div>
+      <div class="row center" id="clearRoundsConfirm" style="display:none; margin-top:10px;">
+        <span style="color:var(--loss); font-size:12.5px;">Clear the ledger, accuracy, points and multiplier summary? The current board picks stay as they are.</span>
+        <button onclick="clearRounds()" style="background:var(--loss); color:#fff;">Yes, clear</button>
+        <button class="ghost" onclick="cancelClearRounds()">Cancel</button>
       </div>
       <div class="row center" id="resetConfirm" style="display:none; margin-top:10px;">
         <span style="color:var(--loss); font-size:12.5px;">Clear everything and go back to seeding? This can't be undone.</span>
@@ -173,6 +187,8 @@ function payoutPoints(x){ return PAYOUT_MAP[x] !== undefined ? PAYOUT_MAP[x] : x
 
 let seedLines = [];
 let roundsLog = []; // raw strings, one per logged round, in order
+let baselineFreq = null; // when set (by "Clear rounds"), replay() starts from this instead of seedLines
+let baselineGap = null;
 let selectedRanks = new Set([1]); // 1-indexed rank positions, drives board highlight + custom combo
 let editingIndex = null; // index into roundsLog currently being edited
 let deletingIndex = null;
@@ -209,13 +225,18 @@ function replay(){
   let totalWinnerSlots = 0;
 
   const lastSeenIdx = {l:null,t:null,f:null,w:null,b:null,p:null};
-  seedLines.forEach((line, idx)=>{
-    const v = validateEntry(line);
-    if(!v.ok) return;
-    Object.keys(v.map).forEach(code=>{ freq[code]++; lastSeenIdx[code] = idx; totalWinnerSlots++; });
-  });
-  const n = seedLines.length;
-  ANIMALS.forEach(a=>{ gap[a.code] = lastSeenIdx[a.code] === null ? n : (n - 1 - lastSeenIdx[a.code]); });
+  let n = 0;
+  if(baselineFreq){
+    ANIMALS.forEach(a=>{ freq[a.code] = baselineFreq[a.code]; gap[a.code] = baselineGap[a.code]; });
+  } else {
+    seedLines.forEach((line, idx)=>{
+      const v = validateEntry(line);
+      if(!v.ok) return;
+      Object.keys(v.map).forEach(code=>{ freq[code]++; lastSeenIdx[code] = idx; totalWinnerSlots++; });
+    });
+    n = seedLines.length;
+    ANIMALS.forEach(a=>{ gap[a.code] = lastSeenIdx[a.code] === null ? n : (n - 1 - lastSeenIdx[a.code]); });
+  }
 
   function baseSorted(){
     return ANIMALS.map(a=>a.code).slice().sort((a,b)=>{
@@ -269,11 +290,6 @@ function seedBoard(){
   const raw = document.getElementById('seedInput').value;
   const lines = raw.split('\n').map(l=>l.trim()).filter(l=>l.length);
   const err = document.getElementById('seedError');
-  if(lines.length < 20){
-    err.textContent = `Need at least 20 seed rounds — currently have ${lines.length}.`;
-    err.classList.add('show');
-    return;
-  }
   for(let i=0;i<lines.length;i++){
     const v = validateEntry(lines[i]);
     if(!v.ok){
@@ -481,7 +497,37 @@ function renderStats(){
   grid.innerHTML = html;
 }
 
-function renderAll(){ renderBoard(); renderHistory(); renderStats(); }
+function patternLabel(values){
+  const counts = {};
+  values.forEach(v=>counts[v]=(counts[v]||0)+1);
+  const parts = Object.keys(counts).map(Number).sort((a,b)=>a-b)
+    .map(v=>`${counts[v]} ${v}x`);
+  return parts.join(' & ');
+}
+
+function renderMultiplierSummary(){
+  const patternCounts = {};
+  state.history.forEach(h=>{
+    const values = Object.values(h.actual);
+    const label = patternLabel(values);
+    patternCounts[label] = (patternCounts[label]||0)+1;
+  });
+  const body = document.getElementById('multiplierBody');
+  const labels = Object.keys(patternCounts);
+  if(labels.length===0){
+    body.innerHTML = '<tr><td colspan="2" class="empty">No rounds logged yet.</td></tr>';
+    return;
+  }
+  // sort: fewer distinct values first, then by the values/counts involved
+  labels.sort((a,b)=>{
+    const pa = a.split(' & '), pb = b.split(' & ');
+    if(pa.length !== pb.length) return pa.length - pb.length;
+    return a.localeCompare(b, undefined, {numeric:true});
+  });
+  body.innerHTML = labels.map(l=>`<tr><td>${l}</td><td>${patternCounts[l]}</td></tr>`).join('');
+}
+
+function renderAll(){ renderBoard(); renderHistory(); renderStats(); renderMultiplierSummary(); }
 
 function exportCSV(){
   if(state.history.length===0) return;
@@ -508,13 +554,33 @@ function cancelReset(){
   document.getElementById('resetBtn').style.display = 'inline-block';
 }
 function resetAll(){
-  seedLines = []; roundsLog = []; selectedRanks = new Set([1]); editingIndex=null; deletingIndex=null; state=null;
+  seedLines = []; roundsLog = []; baselineFreq = null; baselineGap = null;
+  selectedRanks = new Set([1]); editingIndex=null; deletingIndex=null; state=null;
   document.getElementById('seedInput').value = '';
   document.getElementById('seedError').classList.remove('show');
   document.getElementById('app').style.display = 'none';
   document.getElementById('landing').style.display = 'block';
   document.getElementById('resetConfirm').style.display = 'none';
   document.getElementById('resetBtn').style.display = 'inline-block';
+}
+
+function askClearRounds(){
+  document.getElementById('clearRoundsConfirm').style.display = 'flex';
+  document.getElementById('clearRoundsBtn').style.display = 'none';
+}
+function cancelClearRounds(){
+  document.getElementById('clearRoundsConfirm').style.display = 'none';
+  document.getElementById('clearRoundsBtn').style.display = 'inline-block';
+}
+function clearRounds(){
+  baselineFreq = Object.assign({}, state.freq);
+  baselineGap = Object.assign({}, state.gap);
+  roundsLog = [];
+  editingIndex = null; deletingIndex = null;
+  replay();
+  renderAll();
+  document.getElementById('clearRoundsConfirm').style.display = 'none';
+  document.getElementById('clearRoundsBtn').style.display = 'inline-block';
 }
 
 // ---------- PWA: install + auto-update ----------
