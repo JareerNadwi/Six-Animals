@@ -2,7 +2,7 @@
   "name": "Six Animals — Field Ledger",
   "short_name": "Six Animals",
   "description": "Since-last-seen tracking board for a 6-animal dice draw.",
-  "start_url": "./index.html",
+  "start_url": "./Six%20Animals.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#0f2419",

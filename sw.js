@@ -5,7 +5,7 @@
 // stale-while-revalidate so they still update in the background.
 
 const CACHE_NAME = 'six-animals-v1';
-const CORE_FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
+const CORE_FILES = ['./', './index.html', './Six%20Animals.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -37,7 +37,7 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
           return res;
         })
-        .catch(() => caches.match(req).then((cached) => cached || caches.match('./index.html')))
+        .catch(() => caches.match(req).then((cached) => cached || caches.match('./Six%20Animals.html')))
     );
     return;
   }
