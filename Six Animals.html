@@ -73,7 +73,7 @@
   th{ font-family: var(--display); text-transform: uppercase; letter-spacing: 0.05em; color: var(--brass-dim); font-weight:700; font-size:10.5px; }
   td.pos{ color: var(--win); font-weight:700; } td.neg{ color: var(--loss); font-weight:700; }
   td.order{ font-size: 11px; letter-spacing: 0.03em; }
-  .history-scroll{ max-height: 340px; overflow-y:auto; border: 1px solid var(--panel-line); border-radius: 3px; }
+  .history-scroll{ max-height: 400px; overflow-y:auto; border: 1px solid var(--panel-line); border-radius: 3px; }
   .history-scroll table{ font-size:11.5px; } .history-scroll thead th{ position: sticky; top:0; background: var(--panel); }
   .stat-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 10px; margin-top: 8px; }
   .stat-card{ background: var(--flip-bg); border:1px solid var(--panel-line); border-radius:4px; padding: 12px; }
@@ -136,6 +136,11 @@
     </div>
 
     <div class="panel">
+      <div class="panel-title">Stats window <span class="note">applies to accuracy, multiplier summary &amp; points below — ledger above always shows everything</span></div>
+      <div class="row" id="statsWindowPicker"></div>
+    </div>
+
+    <div class="panel">
       <div class="panel-title">Accuracy by depth <span class="note">per-animal-chosen hit rate, not "any hit counts"</span></div>
       <table id="accTable">
         <thead><tr><th>Depth</th><th>Correct picks</th><th>Picks made</th><th>Accuracy</th></tr></thead>
@@ -193,6 +198,73 @@ let selectedRanks = new Set([1]); // 1-indexed rank positions, drives board high
 let editingIndex = null; // index into roundsLog currently being edited
 let deletingIndex = null;
 let state = null;
+let statsWindow = 'all'; // 'all' or an integer N meaning "last N rounds" — drives accuracy/points/multiplier summary
+
+// ---------- auto-save (IndexedDB) ----------
+const IDB_NAME = 'sixAnimalsDB', IDB_STORE = 'state', IDB_VERSION = 1, IDB_KEY = 'snapshot';
+function openIDB(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore(IDB_STORE); };
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+async function idbPut(key, value){
+  try{
+    const db = await openIDB();
+    await new Promise((resolve, reject)=>{
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(value, key);
+      tx.oncomplete = resolve; tx.onerror = ()=>reject(tx.error);
+    });
+  }catch(e){ console.warn('Auto-save failed:', e); }
+}
+async function idbGetKey(key){
+  try{
+    const db = await openIDB();
+    return await new Promise((resolve, reject)=>{
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = ()=>resolve(req.result);
+      req.onerror = ()=>reject(req.error);
+    });
+  }catch(e){ console.warn('Auto-load failed:', e); return undefined; }
+}
+async function idbDeleteKey(key){
+  try{
+    const db = await openIDB();
+    await new Promise((resolve, reject)=>{
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).delete(key);
+      tx.oncomplete = resolve; tx.onerror = ()=>reject(tx.error);
+    });
+  }catch(e){ console.warn('Auto-clear failed:', e); }
+}
+function persistState(){
+  const appOpen = document.getElementById('app').style.display !== 'none';
+  idbPut(IDB_KEY, {
+    seedLines, roundsLog, baselineFreq, baselineGap,
+    selectedRanks: Array.from(selectedRanks),
+    statsWindow, appOpen
+  });
+}
+async function restoreState(){
+  const snap = await idbGetKey(IDB_KEY);
+  if(!snap) return;
+  seedLines = snap.seedLines || [];
+  roundsLog = snap.roundsLog || [];
+  baselineFreq = snap.baselineFreq || null;
+  baselineGap = snap.baselineGap || null;
+  if(Array.isArray(snap.selectedRanks) && snap.selectedRanks.length){
+    selectedRanks = new Set(snap.selectedRanks);
+  }
+  statsWindow = (snap.statsWindow !== undefined && snap.statsWindow !== null) ? snap.statsWindow : 'all';
+  if(seedLines.length || roundsLog.length || baselineFreq){
+    replay();
+    if(snap.appOpen) openApp();
+  }
+}
 
 // ---------- validation ----------
 function validateEntry(raw){
@@ -303,6 +375,7 @@ function seedBoard(){
   roundsLog = [];
   replay();
   openApp();
+  persistState();
 }
 
 function skipSeed(){
@@ -311,6 +384,7 @@ function skipSeed(){
   document.getElementById('seedError').classList.remove('show');
   replay();
   openApp();
+  persistState();
 }
 
 function openApp(){
@@ -335,6 +409,7 @@ function buildDepthPicker(){
       if(selectedRanks.has(d)) selectedRanks.delete(d); else selectedRanks.add(d);
       if(selectedRanks.size===0) selectedRanks.add(1);
       renderAll();
+      persistState();
     };
     wrap.appendChild(btn);
   }
@@ -391,6 +466,7 @@ function submitRound(){
   input.value = '';
   renderAll();
   input.focus();
+  persistState();
 }
 
 function ptsClass(v){ return v>0 ? 'pos' : (v<0 ? 'neg' : ''); }
@@ -451,6 +527,7 @@ function saveEdit(idx){
   editingIndex = null;
   replay();
   renderAll();
+  persistState();
 }
 function startDelete(idx){ deletingIndex = idx; editingIndex = null; renderHistory(); }
 function cancelDelete(){ deletingIndex = null; renderHistory(); }
@@ -459,15 +536,41 @@ function confirmDelete(idx){
   deletingIndex = null;
   replay();
   renderAll();
+  persistState();
+}
+
+// ---------- stats window: "last N rounds" / "All" filter for the summary panels ----------
+function statsHistory(){
+  const total = state.history.length;
+  if(statsWindow==='all' || statsWindow>=total) return state.history;
+  return state.history.slice(-statsWindow);
+}
+
+function buildStatsWindowPicker(){
+  const wrap = document.getElementById('statsWindowPicker');
+  const total = state.history.length;
+  const thresholds = [10,20,30,40,50,60,70,80,90,100].filter(n=>n<=total);
+  if(statsWindow!=='all' && !thresholds.includes(statsWindow)) statsWindow = 'all';
+  const opts = thresholds.map(n=>({label:'Last '+n, value:n})).concat([{label:'All', value:'all'}]);
+  wrap.innerHTML = '';
+  opts.forEach(o=>{
+    const btn = document.createElement('button');
+    btn.className = 'chip' + (statsWindow===o.value ? ' active' : '');
+    btn.textContent = o.label;
+    btn.onclick = ()=>{ statsWindow = o.value; renderAll(); persistState(); };
+    wrap.appendChild(btn);
+  });
 }
 
 function renderStats(){
-  const total = state.history.length;
+  buildStatsWindowPicker();
+  const windowed = statsHistory();
+  const total = windowed.length;
   const accBody = document.querySelector('#accTable tbody');
   const depthTotals = {1:{c:0,p:0},2:{c:0,p:0},3:{c:0,p:0},4:{c:0,p:0},5:{c:0,p:0},6:{c:0,p:0}};
   const pointsTotals = {1:0,2:0,3:0,4:0,5:0,6:0};
   let comboCorrect=0, comboPicks=0, comboPoints=0;
-  state.history.forEach(h=>{
+  windowed.forEach(h=>{
     for(let d=1; d<=6; d++){ depthTotals[d].c += h.correctCounts[d]; depthTotals[d].p += d; pointsTotals[d]+=h.points[d]; }
     const combo = comboStatsForRound(h);
     comboCorrect += combo.correct; comboPicks += combo.total; comboPoints += combo.pts;
@@ -507,7 +610,7 @@ function patternLabel(values){
 
 function renderMultiplierSummary(){
   const patternCounts = {};
-  state.history.forEach(h=>{
+  statsHistory().forEach(h=>{
     const values = Object.values(h.actual);
     const label = patternLabel(values);
     patternCounts[label] = (patternCounts[label]||0)+1;
@@ -562,6 +665,7 @@ function resetAll(){
   document.getElementById('landing').style.display = 'block';
   document.getElementById('resetConfirm').style.display = 'none';
   document.getElementById('resetBtn').style.display = 'inline-block';
+  idbDeleteKey(IDB_KEY);
 }
 
 function askClearRounds(){
@@ -581,7 +685,10 @@ function clearRounds(){
   renderAll();
   document.getElementById('clearRoundsConfirm').style.display = 'none';
   document.getElementById('clearRoundsBtn').style.display = 'inline-block';
+  persistState();
 }
+
+restoreState();
 
 // ---------- PWA: install + auto-update ----------
 if('serviceWorker' in navigator){
