@@ -482,7 +482,7 @@ function renderHistory(){
     const rankPos = {}; h.ranking.forEach((c,i2)=>rankPos[c]=i2+1);
     const orderStr = h.ranking.map(c=>{
       const hit = h.actual[c] !== undefined;
-      return `<span class="${hit?'hitmark':''}">${c.toUpperCase()}</span>`;
+      return `<span class="${hit?'pos':''}">${c.toUpperCase()}</span>`;
     }).join('');
     const actualStr = Object.entries(h.actual).map(([c,val])=>byCode[c].name[0]+val).join(' ');
     const cells = [1,2,3,4,5,6].map(d=>{
