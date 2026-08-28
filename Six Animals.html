@@ -73,7 +73,7 @@
   th{ font-family: var(--display); text-transform: uppercase; letter-spacing: 0.05em; color: var(--brass-dim); font-weight:700; font-size:10.5px; }
   td.pos{ color: var(--win); font-weight:700; } td.neg{ color: var(--loss); font-weight:700; }
   td.order{ font-size: 11px; letter-spacing: 0.03em; }
-  .history-scroll{ max-height: 767px; overflow-y:auto; border: 1px solid var(--panel-line); border-radius: 3px; }
+  .history-scroll{ max-height: 397px; overflow-y:auto; border: 1px solid var(--panel-line); border-radius: 3px; }
   .history-scroll table{ font-size:11.5px; } .history-scroll thead th{ position: sticky; top:0; background: var(--panel); }
   .stat-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 10px; margin-top: 8px; }
   .stat-card{ background: var(--flip-bg); border:1px solid var(--panel-line); border-radius:4px; padding: 12px; }
@@ -126,19 +126,16 @@
     </div>
 
     <div class="panel">
+    <div class="panel">
       <div class="panel-title">Ledger</div>
-      <div class="history-scroll">
+      <div class="depth-picker" id="windowPicker" style="margin-bottom:8px;"></div>
+      <div class="hint" id="windowHint" style="text-align:center; margin-bottom:10px;"></div>
+      <div class="history-scroll" id="historyScroll">
         <table id="historyTable">
           <thead><tr><th>#</th><th>Suggested order</th><th>Result</th><th>Top1</th><th>Top2</th><th>Top3</th><th>Top4</th><th>Top5</th><th>Top6</th><th id="comboHeader">Custom</th><th>Edit</th></tr></thead>
           <tbody id="historyBody"><tr><td colspan="11" class="empty">No rounds logged yet.</td></tr></tbody>
         </table>
       </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-title">Stats window</div>
-      <div class="depth-picker" id="windowPicker"></div>
-      <div class="hint" id="windowHint" style="text-align:center;"></div>
     </div>
 
     <div class="panel">
@@ -396,6 +393,7 @@ function submitRound(){
   replay();
   input.value = '';
   renderAll();
+  scrollLedgerToLatest();
   input.focus();
 }
 
@@ -404,12 +402,15 @@ function fmt(v){ return (Math.round(v*10)/10).toFixed(1).replace(/\.0$/,''); }
 
 function renderHistory(){
   const body = document.getElementById('historyBody');
-  if(state.history.length===0){
+  const rounds = windowedHistory();
+  const offset = state.history.length - rounds.length; // real index into state.history/roundsLog for rounds[0]
+  if(rounds.length===0){
     body.innerHTML = '<tr><td colspan="11" class="empty">No rounds logged yet.</td></tr>';
     return;
   }
   const rowsHtml = [];
-  state.history.forEach((h, idx)=>{
+  rounds.forEach((h, i)=>{
+    const idx = offset + i; // real index into state.history / roundsLog
     if(editingIndex === idx){
       rowsHtml.push(`<tr class="edit-row">
         <td>${h.round}</td>
@@ -429,7 +430,7 @@ function renderHistory(){
       </td></tr>`);
       return;
     }
-    const rankPos = {}; h.ranking.forEach((c,i)=>rankPos[c]=i+1);
+    const rankPos = {}; h.ranking.forEach((c,i2)=>rankPos[c]=i2+1);
     const orderStr = h.ranking.map(c=>c.toUpperCase()).join('');
     const actualStr = Object.entries(h.actual).map(([c,val])=>byCode[c].name[0]+val).join(' ');
     const cells = [1,2,3,4,5,6].map(d=>`<td class="${ptsClass(h.points[d])}">${fmt(h.points[d])}</td>`).join('');
@@ -440,11 +441,16 @@ function renderHistory(){
       <td><button class="tiny" onclick="startEdit(${idx})">✎</button> <button class="tiny ghost" onclick="startDelete(${idx})">✕</button></td>
     </tr>`);
   });
-  body.innerHTML = rowsHtml.reverse().join('');
+  body.innerHTML = rowsHtml.join('');
   if(editingIndex !== null){
     const el = document.getElementById('editInput');
     if(el) el.focus();
   }
+}
+
+function scrollLedgerToLatest(){
+  const el = document.getElementById('historyScroll');
+  if(el) el.scrollTop = el.scrollHeight;
 }
 
 function startEdit(idx){ editingIndex = idx; deletingIndex = null; renderHistory(); }
@@ -482,7 +488,7 @@ function buildWindowPicker(){
     const btn = document.createElement('button');
     btn.className = 'chip' + (statsWindow === opt ? ' active' : '');
     btn.textContent = opt==='all' ? 'All' : opt;
-    btn.onclick = ()=>{ statsWindow = opt; renderStats(); renderMultiplierSummary(); buildWindowPicker(); updateWindowHint(); };
+    btn.onclick = ()=>{ statsWindow = opt; renderHistory(); renderStats(); renderMultiplierSummary(); buildWindowPicker(); updateWindowHint(); saveState(); };
     wrap.appendChild(btn);
   });
 }
@@ -681,6 +687,7 @@ async function restoreFromSave(){
     document.getElementById('landing').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     renderAll();
+    scrollLedgerToLatest();
   } else if(seedLines.length || roundsLog.length){
     // had a seed typed but hadn't opened the board yet — restore the textarea text
     document.getElementById('seedInput').value = seedLines.join('\n');
