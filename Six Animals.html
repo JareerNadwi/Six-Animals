@@ -68,6 +68,7 @@
   .runner .metric-row b{ color: var(--cream); font-weight:700; }
   .board-panel{ background: var(--panel); }
   .sticky-stack{ position: sticky; top: 0; z-index: 40; background: var(--board-bg); box-shadow: 0 6px 12px -6px rgba(0,0,0,0.5); padding-bottom: 4px; }
+  @media (max-width: 720px){ .sticky-stack{ position: static; box-shadow: none; } }
   .flip{ animation: flipIn 0.5s ease; }
   @keyframes flipIn{ 0%{ transform: rotateX(90deg); opacity:0.2; } 60%{ transform: rotateX(-8deg); } 100%{ transform: rotateX(0deg); } }
   table{ width:100%; border-collapse: collapse; font-size: 12.5px; }
@@ -170,7 +171,20 @@
     <div class="panel">
       <div class="panel-title">Points by depth <span class="note">each animal chosen costs &minus;1; a hit additionally pays 2x&rarr;2.7 · 3x&rarr;3.6 · 4x&rarr;4.5 · 5x&rarr;5.4 · 6x&rarr;6.3</span></div>
       <div class="stat-grid" id="pointsGrid"></div>
-      <div class="row center" style="margin-top:16px;">
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Bid ledger <span class="note">per-round breakdown of what you staked and won/lost</span></div>
+      <div class="history-scroll" id="bidLedgerScroll" style="max-height:397px;">
+        <table id="bidLedgerTable">
+          <thead><tr><th>#</th><th>Bids</th><th>Result</th><th>Net</th><th>Running total</th></tr></thead>
+          <tbody id="bidLedgerBody"><tr><td colspan="5" class="empty">No rounds logged yet.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="row center" style="margin-top:0;">
         <button class="ghost" onclick="exportCSV()">Export ledger as CSV</button>
         <button class="ghost" id="clearRoundsBtn" onclick="askClearRounds()">Clear rounds (keep current picks)</button>
         <button class="ghost" id="resetBtn" onclick="askReset()">Reset board</button>
@@ -546,7 +560,7 @@ function buildWindowPicker(){
     const btn = document.createElement('button');
     btn.className = 'chip' + (statsWindow === opt ? ' active' : '');
     btn.textContent = opt==='all' ? 'All' : opt;
-    btn.onclick = ()=>{ statsWindow = opt; renderHistory(); renderStats(); renderMultiplierSummary(); buildWindowPicker(); updateWindowHint(); saveState(); };
+    btn.onclick = ()=>{ statsWindow = opt; renderHistory(); renderStats(); renderMultiplierSummary(); renderBidLedger(); buildWindowPicker(); updateWindowHint(); saveState(); };
     wrap.appendChild(btn);
   });
 }
@@ -628,7 +642,26 @@ function renderMultiplierSummary(){
   body.innerHTML = FIXED_PATTERNS.map(l=>`<tr><td>${l}</td><td>${patternCounts[l]||0}</td></tr>`).join('');
 }
 
-function renderAll(){ renderBoard(); renderHistory(); buildWindowPicker(); updateWindowHint(); renderStats(); renderMultiplierSummary(); saveState(); }
+function renderBidLedger(){
+  const rounds = windowedHistory();
+  const body = document.getElementById('bidLedgerBody');
+  if(rounds.length===0){
+    body.innerHTML = '<tr><td colspan="5" class="empty">No rounds logged yet.</td></tr>';
+    return;
+  }
+  let running = 0;
+  const rowsHtml = rounds.map(h=>{
+    const bidStr = ANIMALS.filter(a=>(h.bids && h.bids[a.code] > 0))
+      .map(a=>`${a.name[0]}:${h.bids[a.code]}`).join(' ') || '—';
+    const actualStr = Object.entries(h.actual).map(([c,val])=>byCode[c].name[0]+val).join(' ');
+    const net = h.bidNet || 0;
+    running += net;
+    return `<tr><td>${h.round}</td><td>${bidStr}</td><td>${actualStr}</td><td class="${ptsClass(net)}">${fmt(net)}</td><td class="${ptsClass(running)}">${fmt(running)}</td></tr>`;
+  });
+  body.innerHTML = rowsHtml.join('');
+}
+
+function renderAll(){ renderBoard(); renderHistory(); buildWindowPicker(); updateWindowHint(); renderStats(); renderMultiplierSummary(); renderBidLedger(); saveState(); }
 
 function exportCSV(){
   if(state.history.length===0) return;
