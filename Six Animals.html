@@ -52,26 +52,27 @@
   .error{ color: var(--loss); font-size: 12.5px; margin-top: 8px; display:none; }
   .error.show{ display:block; }
   .depth-picker{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 14px; justify-content:center; }
-  .board{ display:grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+  .board{ display:grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
   @media (max-width: 720px){ .board{ grid-template-columns: repeat(3, 1fr); } }
-  .runner{ background: var(--flip-bg); border: 1px solid var(--panel-line); border-radius: 4px; padding: 12px 8px; text-align:center;
+  .runner{ background: var(--flip-bg); border: 1px solid var(--panel-line); border-radius: 4px; padding: 6px 4px; text-align:center;
     position:relative; overflow:hidden; opacity: 0.55; transition: opacity 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease; }
   .runner.selected{ opacity: 1; border-color: var(--brass); box-shadow: 0 0 0 1px var(--brass) inset, 0 0 18px rgba(201,162,39,0.18); }
   .runner.lockedout{ outline: 1px dashed var(--loss); }
-  .runner .icon{ font-size: 26px; line-height:1; }
-  .runner .name{ font-family: var(--display); text-transform: uppercase; font-size: 12px; letter-spacing: 0.06em; margin-top: 4px; color: var(--cream); }
-  .runner .rank-badge{ position:absolute; top:6px; left:6px; font-family: var(--display); font-size: 10px; color: var(--brass-dim);
-    border:1px solid var(--panel-line); border-radius: 2px; padding: 1px 5px; }
+  .runner .icon{ font-size: 15px; line-height:1; }
+  .runner .name{ font-family: var(--display); text-transform: uppercase; font-size: 9px; letter-spacing: 0.05em; margin-top: 2px; color: var(--cream); }
+  .runner .rank-badge{ position:absolute; top:3px; left:3px; font-family: var(--display); font-size: 8px; color: var(--brass-dim);
+    border:1px solid var(--panel-line); border-radius: 2px; padding: 0px 3px; }
   .runner.selected .rank-badge{ color:#1a1406; background: var(--brass); border-color: var(--brass); }
-  .runner .lock-tag{ position:absolute; top:6px; right:6px; font-size: 9px; color: var(--loss); font-family: var(--display); }
-  .runner .metric{ margin-top: 8px; font-size: 11px; color: var(--cream-dim); }
-  .runner .metric b{ color: var(--cream); font-size: 13px; display:block; }
+  .runner .lock-tag{ position:absolute; top:3px; right:3px; font-size: 7px; color: var(--loss); font-family: var(--display); }
+  .runner .metric-row{ margin-top: 3px; font-size: 8.5px; color: var(--cream-dim); display:flex; justify-content:center; gap:5px; }
+  .runner .metric-row b{ color: var(--cream); font-weight:700; }
+  .board-panel{ position: sticky; top: 0; z-index: 40; background: var(--panel); box-shadow: 0 6px 12px -6px rgba(0,0,0,0.5); }
   .flip{ animation: flipIn 0.5s ease; }
   @keyframes flipIn{ 0%{ transform: rotateX(90deg); opacity:0.2; } 60%{ transform: rotateX(-8deg); } 100%{ transform: rotateX(0deg); } }
   table{ width:100%; border-collapse: collapse; font-size: 12.5px; }
   th, td{ padding: 7px 6px; text-align:center; border-bottom: 1px solid var(--panel-line); }
   th{ font-family: var(--display); text-transform: uppercase; letter-spacing: 0.05em; color: var(--brass-dim); font-weight:700; font-size:10.5px; }
-  td.pos{ color: var(--win); font-weight:700; } td.neg{ color: var(--loss); font-weight:700; }
+  td.pos, span.pos{ color: var(--win); font-weight:700; } td.neg, span.neg{ color: var(--loss); font-weight:700; }
   td.order{ font-size: 11px; letter-spacing: 0.03em; }
   .history-scroll{ max-height: 397px; overflow-y:auto; border: 1px solid var(--panel-line); border-radius: 3px; }
   .history-scroll table{ font-size:11.5px; } .history-scroll thead th{ position: sticky; top:0; background: var(--panel); }
@@ -85,6 +86,12 @@
   footer{ text-align:center; color: var(--cream-dim); font-size: 11px; margin-top: 30px; }
   .empty{ color: var(--cream-dim); font-size: 12.5px; padding: 14px; text-align:center; }
   .edit-row input{ width: 140px; }
+  .bid-row{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .bid-box{ display:flex; align-items:center; gap:6px; background: var(--flip-bg); border:1px solid var(--panel-line);
+    border-radius:4px; padding:8px 10px; flex: 1 1 140px; }
+  .bid-box .icon{ font-size:18px; }
+  .bid-box input{ width:100%; min-width:0; background:transparent; border:none; color:var(--cream); font-family: var(--mono); font-size:14px; padding:0; }
+  .bid-box input:focus{ outline:none; }
 </style>
 </head>
 <body>
@@ -109,7 +116,7 @@
   </div>
 
   <div id="app" style="display:none;">
-    <div class="panel">
+    <div class="panel board-panel">
       <div class="panel-title">Current board — Round <span id="roundNum">1</span></div>
       <div class="depth-picker" id="depthPicker"></div>
       <div class="board" id="board"></div>
@@ -123,9 +130,10 @@
       </div>
       <div class="hint">Only letters l t f w b p with numbers 2–6, no repeated animal, numbers totalling 6 or less (6 dice).</div>
       <div class="error" id="roundError"></div>
+      <div class="hint" style="margin-top:14px;">Optional — how much are you bidding on each animal this round?</div>
+      <div class="bid-row" id="bidRow"></div>
     </div>
 
-    <div class="panel">
     <div class="panel">
       <div class="panel-title">Ledger</div>
       <div class="depth-picker" id="windowPicker" style="margin-bottom:8px;"></div>
@@ -190,6 +198,8 @@ function payoutPoints(x){ return PAYOUT_MAP[x] !== undefined ? PAYOUT_MAP[x] : x
 
 let seedLines = [];
 let roundsLog = []; // raw strings, one per logged round, in order
+let bidsLog = []; // {l,t,f,w,b,p} bid amounts snapshotted at submit time, parallel to roundsLog
+let currentBids = {l:0,t:0,f:0,w:0,b:0,p:0};
 let baselineFreq = null; // when set (by "Clear rounds"), replay() starts from this instead of seedLines
 let baselineGap = null;
 let selectedRanks = new Set([1]); // 1-indexed rank positions, drives board highlight + custom combo
@@ -254,7 +264,7 @@ function replay(){
     return eligible.concat(locked);
   }
 
-  roundsLog.forEach(raw=>{
+  roundsLog.forEach((raw, idx)=>{
     const v = validateEntry(raw);
     if(!v.ok) return; // shouldn't happen, entries are validated before storing
     const actual = v.map;
@@ -269,7 +279,16 @@ function replay(){
       points[d] = hitPayout - d; correctCounts[d] = correct;
     }
 
-    history.push({round, ranking: rank.slice(), actual: Object.assign({},actual), points, correctCounts});
+    const bids = bidsLog[idx] || {l:0,t:0,f:0,w:0,b:0,p:0};
+    let bidNet = 0;
+    ANIMALS.forEach(a=>{
+      const b = bids[a.code] || 0;
+      if(b <= 0) return;
+      if(actual[a.code] !== undefined){ bidNet += b * (payoutPoints(actual[a.code]) - 1); }
+      else{ bidNet += -b; }
+    });
+
+    history.push({round, ranking: rank.slice(), actual: Object.assign({},actual), points, correctCounts, bids: Object.assign({},bids), bidNet});
 
     const topCode = rank[0];
     if(actual[topCode] !== undefined){ topMissStreak[topCode]=0; lockedUntil[topCode]=0; }
@@ -319,6 +338,7 @@ function skipSeed(){
 function openApp(){
   document.getElementById('landing').style.display = 'none';
   document.getElementById('app').style.display = 'block';
+  buildBidRow();
   renderAll();
 }
 
@@ -366,8 +386,7 @@ function renderBoard(){
       ${locked ? '<div class="lock-tag">BENCHED</div>' : ''}
       <div class="icon">${a.icon}</div>
       <div class="name">${a.name}</div>
-      <div class="metric">Gap<b>${state.gap[a.code]}</b></div>
-      <div class="metric">Freq<b>${state.freq[a.code]}</b></div>
+      <div class="metric-row"><span>G:<b>${state.gap[a.code]}</b></span><span>F:<b>${state.freq[a.code]}</b></span></div>
     `;
     board.appendChild(div);
   });
@@ -383,6 +402,29 @@ function comboStatsForRound(h){
   return {correct, total: chosenCodes.length, pts};
 }
 
+function buildBidRow(){
+  const wrap = document.getElementById('bidRow');
+  wrap.innerHTML = '';
+  ANIMALS.forEach(a=>{
+    const box = document.createElement('div');
+    box.className = 'bid-box';
+    box.innerHTML = `<span class="icon">${a.icon}</span><input type="number" min="0" step="any" placeholder="0" id="bid-${a.code}">`;
+    wrap.appendChild(box);
+    box.querySelector('input').addEventListener('input', (e)=>{
+      const val = parseFloat(e.target.value);
+      currentBids[a.code] = isNaN(val) || val < 0 ? 0 : val;
+    });
+  });
+}
+
+function resetBidInputs(){
+  currentBids = {l:0,t:0,f:0,w:0,b:0,p:0};
+  ANIMALS.forEach(a=>{
+    const el = document.getElementById('bid-'+a.code);
+    if(el) el.value = '';
+  });
+}
+
 function submitRound(){
   const input = document.getElementById('actualInput');
   const err = document.getElementById('roundError');
@@ -390,8 +432,10 @@ function submitRound(){
   if(!v.ok){ err.textContent = v.error; err.classList.add('show'); return; }
   err.classList.remove('show');
   roundsLog.push(input.value.trim());
+  bidsLog.push(Object.assign({}, currentBids));
   replay();
   input.value = '';
+  resetBidInputs();
   renderAll();
   scrollLedgerToLatest();
   input.focus();
@@ -431,11 +475,18 @@ function renderHistory(){
       return;
     }
     const rankPos = {}; h.ranking.forEach((c,i2)=>rankPos[c]=i2+1);
-    const orderStr = h.ranking.map(c=>c.toUpperCase()).join('');
+    const orderStr = h.ranking.map(c=>{
+      const hit = h.actual[c] !== undefined;
+      return `<span class="${hit?'pos':''}">${c.toUpperCase()}</span>`;
+    }).join('');
     const actualStr = Object.entries(h.actual).map(([c,val])=>byCode[c].name[0]+val).join(' ');
-    const cells = [1,2,3,4,5,6].map(d=>`<td class="${ptsClass(h.points[d])}">${fmt(h.points[d])}</td>`).join('');
+    const cells = [1,2,3,4,5,6].map(d=>{
+      const marginalCode = h.ranking[d-1];
+      const hit = h.actual[marginalCode] !== undefined;
+      return `<td class="${hit?'pos':'neg'}">${fmt(h.points[d])}</td>`;
+    }).join('');
     const combo = comboStatsForRound(h);
-    const comboCell = `<td class="${ptsClass(combo.pts)}">${fmt(combo.pts)}</td>`;
+    const comboCell = `<td class="${combo.correct>0?'pos':'neg'}">${fmt(combo.pts)}</td>`;
     rowsHtml.push(`<tr>
       <td>${h.round}</td><td class="order">${orderStr}</td><td>${actualStr}</td>${cells}${comboCell}
       <td><button class="tiny" onclick="startEdit(${idx})">✎</button> <button class="tiny ghost" onclick="startDelete(${idx})">✕</button></td>
@@ -468,6 +519,7 @@ function startDelete(idx){ deletingIndex = idx; editingIndex = null; renderHisto
 function cancelDelete(){ deletingIndex = null; renderHistory(); }
 function confirmDelete(idx){
   roundsLog.splice(idx,1);
+  bidsLog.splice(idx,1);
   deletingIndex = null;
   replay();
   renderAll();
@@ -509,10 +561,12 @@ function renderStats(){
   const depthTotals = {1:{c:0,p:0},2:{c:0,p:0},3:{c:0,p:0},4:{c:0,p:0},5:{c:0,p:0},6:{c:0,p:0}};
   const pointsTotals = {1:0,2:0,3:0,4:0,5:0,6:0};
   let comboCorrect=0, comboPicks=0, comboPoints=0;
+  let bidTotal = 0;
   rounds.forEach(h=>{
     for(let d=1; d<=6; d++){ depthTotals[d].c += h.correctCounts[d]; depthTotals[d].p += d; pointsTotals[d]+=h.points[d]; }
     const combo = comboStatsForRound(h);
     comboCorrect += combo.correct; comboPicks += combo.total; comboPoints += combo.pts;
+    bidTotal += h.bidNet || 0;
   });
 
   if(total===0){
@@ -536,6 +590,8 @@ function renderStats(){
   }).join('');
   const comboCls = comboPoints>0?'pos':(comboPoints<0?'neg':'');
   html += `<div class="stat-card"><div class="k">Ranks ${comboLabelText()}</div><div class="v ${comboCls}">${comboPoints>0?'+':''}${fmt(comboPoints)}</div></div>`;
+  const bidCls = bidTotal>0?'pos':(bidTotal<0?'neg':'');
+  html += `<div class="stat-card"><div class="k">Your bids (won/lost)</div><div class="v ${bidCls}">${bidTotal>0?'+':''}${fmt(bidTotal)}</div></div>`;
   grid.innerHTML = html;
 }
 
@@ -570,13 +626,13 @@ function renderAll(){ renderBoard(); renderHistory(); buildWindowPicker(); updat
 
 function exportCSV(){
   if(state.history.length===0) return;
-  let csv = 'Round,Order(LTFWBP),Result,Top1,Top2,Top3,Top4,Top5,Top6,Custom\n';
+  let csv = 'Round,Order(LTFWBP),Result,Top1,Top2,Top3,Top4,Top5,Top6,Custom,BidNet\n';
   state.history.forEach(h=>{
     const rankPos = {}; h.ranking.forEach((c,i)=>rankPos[c]=i+1);
     const orderStr = h.ranking.map(c=>c.toUpperCase()).join('');
     const actualStr = Object.entries(h.actual).map(([c,val])=>byCode[c].name[0]+val).join(' ');
     const combo = comboStatsForRound(h);
-    csv += [h.round, orderStr, actualStr, fmt(h.points[1]),fmt(h.points[2]),fmt(h.points[3]),fmt(h.points[4]),fmt(h.points[5]),fmt(h.points[6]),fmt(combo.pts)].join(',')+'\n';
+    csv += [h.round, orderStr, actualStr, fmt(h.points[1]),fmt(h.points[2]),fmt(h.points[3]),fmt(h.points[4]),fmt(h.points[5]),fmt(h.points[6]),fmt(combo.pts),fmt(h.bidNet||0)].join(',')+'\n';
   });
   const blob = new Blob([csv], {type:'text/csv'});
   const url = URL.createObjectURL(blob);
@@ -593,8 +649,9 @@ function cancelReset(){
   document.getElementById('resetBtn').style.display = 'inline-block';
 }
 function resetAll(){
-  seedLines = []; roundsLog = []; baselineFreq = null; baselineGap = null;
+  seedLines = []; roundsLog = []; bidsLog = []; baselineFreq = null; baselineGap = null;
   selectedRanks = new Set([1]); editingIndex=null; deletingIndex=null; state=null; statsWindow='all';
+  resetBidInputs();
   document.getElementById('seedInput').value = '';
   document.getElementById('seedError').classList.remove('show');
   document.getElementById('app').style.display = 'none';
@@ -616,6 +673,7 @@ function clearRounds(){
   baselineFreq = Object.assign({}, state.freq);
   baselineGap = Object.assign({}, state.gap);
   roundsLog = [];
+  bidsLog = [];
   editingIndex = null; deletingIndex = null;
   replay();
   renderAll();
@@ -642,7 +700,7 @@ async function saveState(){
     const db = await openDB();
     const appOpen = document.getElementById('app').style.display !== 'none';
     const payload = {
-      seedLines, roundsLog,
+      seedLines, roundsLog, bidsLog,
       baselineFreq, baselineGap,
       selectedRanks: Array.from(selectedRanks),
       statsWindow, appOpen
@@ -678,6 +736,7 @@ async function restoreFromSave(){
   if(!saved) return;
   seedLines = saved.seedLines || [];
   roundsLog = saved.roundsLog || [];
+  bidsLog = saved.bidsLog || [];
   baselineFreq = saved.baselineFreq || null;
   baselineGap = saved.baselineGap || null;
   selectedRanks = new Set(saved.selectedRanks && saved.selectedRanks.length ? saved.selectedRanks : [1]);
@@ -686,6 +745,7 @@ async function restoreFromSave(){
   if(saved.appOpen){
     document.getElementById('landing').style.display = 'none';
     document.getElementById('app').style.display = 'block';
+    buildBidRow();
     renderAll();
     scrollLedgerToLatest();
   } else if(seedLines.length || roundsLog.length){
