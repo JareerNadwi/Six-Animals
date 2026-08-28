@@ -66,13 +66,15 @@
   .runner .lock-tag{ position:absolute; top:3px; right:3px; font-size: 7px; color: var(--loss); font-family: var(--display); }
   .runner .metric-row{ margin-top: 3px; font-size: 8.5px; color: var(--cream-dim); display:flex; justify-content:center; gap:5px; }
   .runner .metric-row b{ color: var(--cream); font-weight:700; }
-  .board-panel{ position: sticky; top: 0; z-index: 40; background: var(--panel); box-shadow: 0 6px 12px -6px rgba(0,0,0,0.5); }
+  .board-panel{ background: var(--panel); }
+  .sticky-stack{ position: sticky; top: 0; z-index: 40; background: var(--board-bg); box-shadow: 0 6px 12px -6px rgba(0,0,0,0.5); padding-bottom: 4px; }
   .flip{ animation: flipIn 0.5s ease; }
   @keyframes flipIn{ 0%{ transform: rotateX(90deg); opacity:0.2; } 60%{ transform: rotateX(-8deg); } 100%{ transform: rotateX(0deg); } }
   table{ width:100%; border-collapse: collapse; font-size: 12.5px; }
   th, td{ padding: 7px 6px; text-align:center; border-bottom: 1px solid var(--panel-line); }
   th{ font-family: var(--display); text-transform: uppercase; letter-spacing: 0.05em; color: var(--brass-dim); font-weight:700; font-size:10.5px; }
   td.pos, span.pos{ color: var(--win); font-weight:700; } td.neg, span.neg{ color: var(--loss); font-weight:700; }
+  td.hitmark, span.hitmark{ color: #ffffff; font-weight:700; }
   td.order{ font-size: 11px; letter-spacing: 0.03em; }
   .history-scroll{ max-height: 397px; overflow-y:auto; border: 1px solid var(--panel-line); border-radius: 3px; }
   .history-scroll table{ font-size:11.5px; } .history-scroll thead th{ position: sticky; top:0; background: var(--panel); }
@@ -117,22 +119,24 @@
   </div>
 
   <div id="app" style="display:none;">
-    <div class="panel board-panel">
-      <div class="panel-title">Current board — Round <span id="roundNum">1</span></div>
-      <div class="depth-picker" id="depthPicker"></div>
-      <div class="board" id="board"></div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-title">Log this round's result</div>
-      <div class="row">
-        <input type="text" id="actualInput" placeholder="e.g. l2 w3" onkeydown="if(event.key==='Enter')submitRound()">
-        <button onclick="submitRound()">Log result &amp; advance</button>
+    <div class="sticky-stack">
+      <div class="panel board-panel">
+        <div class="panel-title">Current board — Round <span id="roundNum">1</span></div>
+        <div class="depth-picker" id="depthPicker"></div>
+        <div class="board" id="board"></div>
       </div>
-      <div class="hint">Only letters l t f w b p with numbers 2–6, no repeated animal, numbers totalling 6 or less (6 dice).</div>
-      <div class="error" id="roundError"></div>
-      <div class="hint" style="margin-top:14px;">Optional — how much are you bidding on each animal this round?</div>
-      <div class="bid-row" id="bidRow"></div>
+
+      <div class="panel board-panel">
+        <div class="panel-title">Log this round's result</div>
+        <div class="row">
+          <input type="text" id="actualInput" placeholder="e.g. l2 w3" onkeydown="if(event.key==='Enter')submitRound()">
+          <button onclick="submitRound()">Log result &amp; advance</button>
+        </div>
+        <div class="hint">Only letters l t f w b p with numbers 2–6, no repeated animal, numbers totalling 6 or less (6 dice).</div>
+        <div class="error" id="roundError"></div>
+        <div class="hint" style="margin-top:14px;">Optional — how much are you bidding on each animal this round?</div>
+        <div class="bid-row" id="bidRow"></div>
+      </div>
     </div>
 
     <div class="panel">
@@ -478,16 +482,17 @@ function renderHistory(){
     const rankPos = {}; h.ranking.forEach((c,i2)=>rankPos[c]=i2+1);
     const orderStr = h.ranking.map(c=>{
       const hit = h.actual[c] !== undefined;
-      return `<span class="${hit?'pos':''}">${c.toUpperCase()}</span>`;
+      return `<span class="${hit?'hitmark':''}">${c.toUpperCase()}</span>`;
     }).join('');
     const actualStr = Object.entries(h.actual).map(([c,val])=>byCode[c].name[0]+val).join(' ');
     const cells = [1,2,3,4,5,6].map(d=>{
       const marginalCode = h.ranking[d-1];
       const hit = h.actual[marginalCode] !== undefined;
-      return `<td class="${hit?'pos':'neg'}">${fmt(h.points[d])}</td>`;
+      const cls = hit ? 'hitmark' : ptsClass(h.points[d]);
+      return `<td class="${cls}">${fmt(h.points[d])}</td>`;
     }).join('');
     const combo = comboStatsForRound(h);
-    const comboCell = `<td class="${combo.correct>0?'pos':'neg'}">${fmt(combo.pts)}</td>`;
+    const comboCell = `<td class="${ptsClass(combo.pts)}">${fmt(combo.pts)}</td>`;
     rowsHtml.push(`<tr>
       <td>${h.round}</td><td class="order">${orderStr}</td><td>${actualStr}</td>${cells}${comboCell}
       <td><button class="tiny" onclick="startEdit(${idx})">✎</button> <button class="tiny ghost" onclick="startDelete(${idx})">✕</button></td>
