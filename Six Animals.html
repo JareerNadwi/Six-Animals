@@ -73,7 +73,7 @@
   th{ font-family: var(--display); text-transform: uppercase; letter-spacing: 0.05em; color: var(--brass-dim); font-weight:700; font-size:10.5px; }
   td.pos{ color: var(--win); font-weight:700; } td.neg{ color: var(--loss); font-weight:700; }
   td.order{ font-size: 11px; letter-spacing: 0.03em; }
-  .history-scroll{ max-height: 400px; overflow-y:auto; border: 1px solid var(--panel-line); border-radius: 3px; }
+  .history-scroll{ max-height: 767px; overflow-y:auto; border: 1px solid var(--panel-line); border-radius: 3px; }
   .history-scroll table{ font-size:11.5px; } .history-scroll thead th{ position: sticky; top:0; background: var(--panel); }
   .stat-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 10px; margin-top: 8px; }
   .stat-card{ background: var(--flip-bg); border:1px solid var(--panel-line); border-radius:4px; padding: 12px; }
@@ -136,8 +136,9 @@
     </div>
 
     <div class="panel">
-      <div class="panel-title">Stats window <span class="note">applies to accuracy, multiplier summary &amp; points below — ledger above always shows everything</span></div>
-      <div class="row" id="statsWindowPicker"></div>
+      <div class="panel-title">Stats window</div>
+      <div class="depth-picker" id="windowPicker"></div>
+      <div class="hint" id="windowHint" style="text-align:center;"></div>
     </div>
 
     <div class="panel">
@@ -198,73 +199,6 @@ let selectedRanks = new Set([1]); // 1-indexed rank positions, drives board high
 let editingIndex = null; // index into roundsLog currently being edited
 let deletingIndex = null;
 let state = null;
-let statsWindow = 'all'; // 'all' or an integer N meaning "last N rounds" — drives accuracy/points/multiplier summary
-
-// ---------- auto-save (IndexedDB) ----------
-const IDB_NAME = 'sixAnimalsDB', IDB_STORE = 'state', IDB_VERSION = 1, IDB_KEY = 'snapshot';
-function openIDB(){
-  return new Promise((resolve, reject)=>{
-    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
-    req.onupgradeneeded = ()=>{ req.result.createObjectStore(IDB_STORE); };
-    req.onsuccess = ()=>resolve(req.result);
-    req.onerror = ()=>reject(req.error);
-  });
-}
-async function idbPut(key, value){
-  try{
-    const db = await openIDB();
-    await new Promise((resolve, reject)=>{
-      const tx = db.transaction(IDB_STORE, 'readwrite');
-      tx.objectStore(IDB_STORE).put(value, key);
-      tx.oncomplete = resolve; tx.onerror = ()=>reject(tx.error);
-    });
-  }catch(e){ console.warn('Auto-save failed:', e); }
-}
-async function idbGetKey(key){
-  try{
-    const db = await openIDB();
-    return await new Promise((resolve, reject)=>{
-      const tx = db.transaction(IDB_STORE, 'readonly');
-      const req = tx.objectStore(IDB_STORE).get(key);
-      req.onsuccess = ()=>resolve(req.result);
-      req.onerror = ()=>reject(req.error);
-    });
-  }catch(e){ console.warn('Auto-load failed:', e); return undefined; }
-}
-async function idbDeleteKey(key){
-  try{
-    const db = await openIDB();
-    await new Promise((resolve, reject)=>{
-      const tx = db.transaction(IDB_STORE, 'readwrite');
-      tx.objectStore(IDB_STORE).delete(key);
-      tx.oncomplete = resolve; tx.onerror = ()=>reject(tx.error);
-    });
-  }catch(e){ console.warn('Auto-clear failed:', e); }
-}
-function persistState(){
-  const appOpen = document.getElementById('app').style.display !== 'none';
-  idbPut(IDB_KEY, {
-    seedLines, roundsLog, baselineFreq, baselineGap,
-    selectedRanks: Array.from(selectedRanks),
-    statsWindow, appOpen
-  });
-}
-async function restoreState(){
-  const snap = await idbGetKey(IDB_KEY);
-  if(!snap) return;
-  seedLines = snap.seedLines || [];
-  roundsLog = snap.roundsLog || [];
-  baselineFreq = snap.baselineFreq || null;
-  baselineGap = snap.baselineGap || null;
-  if(Array.isArray(snap.selectedRanks) && snap.selectedRanks.length){
-    selectedRanks = new Set(snap.selectedRanks);
-  }
-  statsWindow = (snap.statsWindow !== undefined && snap.statsWindow !== null) ? snap.statsWindow : 'all';
-  if(seedLines.length || roundsLog.length || baselineFreq){
-    replay();
-    if(snap.appOpen) openApp();
-  }
-}
 
 // ---------- validation ----------
 function validateEntry(raw){
@@ -375,7 +309,6 @@ function seedBoard(){
   roundsLog = [];
   replay();
   openApp();
-  persistState();
 }
 
 function skipSeed(){
@@ -384,7 +317,6 @@ function skipSeed(){
   document.getElementById('seedError').classList.remove('show');
   replay();
   openApp();
-  persistState();
 }
 
 function openApp(){
@@ -409,7 +341,6 @@ function buildDepthPicker(){
       if(selectedRanks.has(d)) selectedRanks.delete(d); else selectedRanks.add(d);
       if(selectedRanks.size===0) selectedRanks.add(1);
       renderAll();
-      persistState();
     };
     wrap.appendChild(btn);
   }
@@ -466,7 +397,6 @@ function submitRound(){
   input.value = '';
   renderAll();
   input.focus();
-  persistState();
 }
 
 function ptsClass(v){ return v>0 ? 'pos' : (v<0 ? 'neg' : ''); }
@@ -527,7 +457,6 @@ function saveEdit(idx){
   editingIndex = null;
   replay();
   renderAll();
-  persistState();
 }
 function startDelete(idx){ deletingIndex = idx; editingIndex = null; renderHistory(); }
 function cancelDelete(){ deletingIndex = null; renderHistory(); }
@@ -536,41 +465,45 @@ function confirmDelete(idx){
   deletingIndex = null;
   replay();
   renderAll();
-  persistState();
 }
 
-// ---------- stats window: "last N rounds" / "All" filter for the summary panels ----------
-function statsHistory(){
-  const total = state.history.length;
-  if(statsWindow==='all' || statsWindow>=total) return state.history;
+let statsWindow = 'all'; // 'all' or a number like 10,20,...,100
+
+function windowedHistory(){
+  if(statsWindow === 'all') return state.history;
   return state.history.slice(-statsWindow);
 }
 
-function buildStatsWindowPicker(){
-  const wrap = document.getElementById('statsWindowPicker');
-  const total = state.history.length;
-  const thresholds = [10,20,30,40,50,60,70,80,90,100].filter(n=>n<=total);
-  if(statsWindow!=='all' && !thresholds.includes(statsWindow)) statsWindow = 'all';
-  const opts = thresholds.map(n=>({label:'Last '+n, value:n})).concat([{label:'All', value:'all'}]);
+function buildWindowPicker(){
+  const wrap = document.getElementById('windowPicker');
   wrap.innerHTML = '';
-  opts.forEach(o=>{
+  const options = [10,20,30,40,50,60,70,80,90,100,'all'];
+  options.forEach(opt=>{
     const btn = document.createElement('button');
-    btn.className = 'chip' + (statsWindow===o.value ? ' active' : '');
-    btn.textContent = o.label;
-    btn.onclick = ()=>{ statsWindow = o.value; renderAll(); persistState(); };
+    btn.className = 'chip' + (statsWindow === opt ? ' active' : '');
+    btn.textContent = opt==='all' ? 'All' : opt;
+    btn.onclick = ()=>{ statsWindow = opt; renderStats(); renderMultiplierSummary(); buildWindowPicker(); updateWindowHint(); };
     wrap.appendChild(btn);
   });
 }
 
+function updateWindowHint(){
+  const total = state.history.length;
+  const shown = windowedHistory().length;
+  const hint = document.getElementById('windowHint');
+  hint.textContent = statsWindow==='all'
+    ? `Showing all ${total} logged round${total===1?'':'s'}.`
+    : `Showing the last ${shown} of ${total} logged round${total===1?'':'s'}.`;
+}
+
 function renderStats(){
-  buildStatsWindowPicker();
-  const windowed = statsHistory();
-  const total = windowed.length;
+  const rounds = windowedHistory();
+  const total = rounds.length;
   const accBody = document.querySelector('#accTable tbody');
   const depthTotals = {1:{c:0,p:0},2:{c:0,p:0},3:{c:0,p:0},4:{c:0,p:0},5:{c:0,p:0},6:{c:0,p:0}};
   const pointsTotals = {1:0,2:0,3:0,4:0,5:0,6:0};
   let comboCorrect=0, comboPicks=0, comboPoints=0;
-  windowed.forEach(h=>{
+  rounds.forEach(h=>{
     for(let d=1; d<=6; d++){ depthTotals[d].c += h.correctCounts[d]; depthTotals[d].p += d; pointsTotals[d]+=h.points[d]; }
     const combo = comboStatsForRound(h);
     comboCorrect += combo.correct; comboPicks += combo.total; comboPoints += combo.pts;
@@ -608,29 +541,26 @@ function patternLabel(values){
   return parts.join(' & ');
 }
 
+const FIXED_PATTERNS = [
+  '1 2x', '2 2x', '3 2x',
+  '1 3x', '2 3x',
+  '1 4x', '1 5x', '1 6x',
+  '1 2x & 1 3x', '1 2x & 1 4x'
+];
+
 function renderMultiplierSummary(){
+  const rounds = windowedHistory();
   const patternCounts = {};
-  statsHistory().forEach(h=>{
+  rounds.forEach(h=>{
     const values = Object.values(h.actual);
     const label = patternLabel(values);
     patternCounts[label] = (patternCounts[label]||0)+1;
   });
   const body = document.getElementById('multiplierBody');
-  const labels = Object.keys(patternCounts);
-  if(labels.length===0){
-    body.innerHTML = '<tr><td colspan="2" class="empty">No rounds logged yet.</td></tr>';
-    return;
-  }
-  // sort: fewer distinct values first, then by the values/counts involved
-  labels.sort((a,b)=>{
-    const pa = a.split(' & '), pb = b.split(' & ');
-    if(pa.length !== pb.length) return pa.length - pb.length;
-    return a.localeCompare(b, undefined, {numeric:true});
-  });
-  body.innerHTML = labels.map(l=>`<tr><td>${l}</td><td>${patternCounts[l]}</td></tr>`).join('');
+  body.innerHTML = FIXED_PATTERNS.map(l=>`<tr><td>${l}</td><td>${patternCounts[l]||0}</td></tr>`).join('');
 }
 
-function renderAll(){ renderBoard(); renderHistory(); renderStats(); renderMultiplierSummary(); }
+function renderAll(){ renderBoard(); renderHistory(); buildWindowPicker(); updateWindowHint(); renderStats(); renderMultiplierSummary(); saveState(); }
 
 function exportCSV(){
   if(state.history.length===0) return;
@@ -658,14 +588,14 @@ function cancelReset(){
 }
 function resetAll(){
   seedLines = []; roundsLog = []; baselineFreq = null; baselineGap = null;
-  selectedRanks = new Set([1]); editingIndex=null; deletingIndex=null; state=null;
+  selectedRanks = new Set([1]); editingIndex=null; deletingIndex=null; state=null; statsWindow='all';
   document.getElementById('seedInput').value = '';
   document.getElementById('seedError').classList.remove('show');
   document.getElementById('app').style.display = 'none';
   document.getElementById('landing').style.display = 'block';
   document.getElementById('resetConfirm').style.display = 'none';
   document.getElementById('resetBtn').style.display = 'inline-block';
-  idbDeleteKey(IDB_KEY);
+  saveState();
 }
 
 function askClearRounds(){
@@ -685,10 +615,78 @@ function clearRounds(){
   renderAll();
   document.getElementById('clearRoundsConfirm').style.display = 'none';
   document.getElementById('clearRoundsBtn').style.display = 'inline-block';
-  persistState();
 }
 
-restoreState();
+// ---------- IndexedDB persistence ----------
+const DB_NAME = 'six-animals-db';
+const STORE_NAME = 'state';
+const STATE_KEY = 'main';
+
+function openDB(){
+  return new Promise((resolve, reject)=>{
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = ()=>{ req.result.createObjectStore(STORE_NAME); };
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+}
+
+async function saveState(){
+  try{
+    const db = await openDB();
+    const appOpen = document.getElementById('app').style.display !== 'none';
+    const payload = {
+      seedLines, roundsLog,
+      baselineFreq, baselineGap,
+      selectedRanks: Array.from(selectedRanks),
+      statsWindow, appOpen
+    };
+    await new Promise((resolve, reject)=>{
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).put(payload, STATE_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = ()=>reject(tx.error);
+    });
+  } catch(e){
+    console.warn('Auto-save failed:', e);
+  }
+}
+
+async function loadState(){
+  try{
+    const db = await openDB();
+    return await new Promise((resolve, reject)=>{
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).get(STATE_KEY);
+      req.onsuccess = ()=>resolve(req.result || null);
+      req.onerror = ()=>reject(req.error);
+    });
+  } catch(e){
+    console.warn('Auto-load failed:', e);
+    return null;
+  }
+}
+
+async function restoreFromSave(){
+  const saved = await loadState();
+  if(!saved) return;
+  seedLines = saved.seedLines || [];
+  roundsLog = saved.roundsLog || [];
+  baselineFreq = saved.baselineFreq || null;
+  baselineGap = saved.baselineGap || null;
+  selectedRanks = new Set(saved.selectedRanks && saved.selectedRanks.length ? saved.selectedRanks : [1]);
+  statsWindow = saved.statsWindow || 'all';
+  replay();
+  if(saved.appOpen){
+    document.getElementById('landing').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    renderAll();
+  } else if(seedLines.length || roundsLog.length){
+    // had a seed typed but hadn't opened the board yet — restore the textarea text
+    document.getElementById('seedInput').value = seedLines.join('\n');
+  }
+}
+restoreFromSave();
 
 // ---------- PWA: install + auto-update ----------
 if('serviceWorker' in navigator){
