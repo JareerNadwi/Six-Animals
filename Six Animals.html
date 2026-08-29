@@ -89,6 +89,12 @@
   footer{ text-align:center; color: var(--cream-dim); font-size: 11px; margin-top: 30px; }
   .empty{ color: var(--cream-dim); font-size: 12.5px; padding: 14px; text-align:center; }
   .edit-row input{ width: 140px; }
+  .edit-form{ display:flex; flex-direction:column; gap:6px; align-items:flex-start; }
+  .edit-bids{ display:flex; gap:6px; flex-wrap:wrap; }
+  .edit-bid{ display:flex; align-items:center; gap:3px; background: var(--flip-bg); border:1px solid var(--panel-line); border-radius:3px; padding:3px 5px; }
+  .edit-bid .icon{ font-size:13px; }
+  .edit-bid input{ width:44px !important; background:transparent; border:none; color:var(--cream); font-family:var(--mono); font-size:12px; padding:0; }
+  .edit-bid input:focus{ outline:none; }
   .bid-row{ display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-top:10px; }
   @media (max-width: 480px){ .bid-row{ grid-template-columns: repeat(2, 1fr); } }
   .bid-box{ display:flex; align-items:center; gap:6px; background: var(--flip-bg); border:1px solid var(--panel-line);
@@ -133,9 +139,7 @@
           <input type="text" id="actualInput" placeholder="e.g. l2 w3" onkeydown="if(event.key==='Enter')submitRound()">
           <button onclick="submitRound()">Log result &amp; advance</button>
         </div>
-        <div class="hint">Only letters l t f w b p with numbers 2–6, no repeated animal, numbers totalling 6 or less (6 dice).</div>
         <div class="error" id="roundError"></div>
-        <div class="hint" style="margin-top:14px;">Optional — how much are you bidding on each animal this round?</div>
         <div class="bid-row" id="bidRow"></div>
       </div>
     </div>
@@ -153,7 +157,7 @@
     </div>
 
     <div class="panel">
-      <div class="panel-title">Accuracy by depth <span class="note">per-animal-chosen hit rate, not "any hit counts"</span></div>
+      <div class="panel-title">Accuracy by depth</div>
       <table id="accTable">
         <thead><tr><th>Depth</th><th>Correct picks</th><th>Picks made</th><th>Accuracy</th></tr></thead>
         <tbody></tbody>
@@ -161,7 +165,7 @@
     </div>
 
     <div class="panel">
-      <div class="panel-title">Multiplier summary <span class="note">how many rounds matched each pattern</span></div>
+      <div class="panel-title">Multiplier summary</div>
       <table id="multiplierTable">
         <thead><tr><th>Pattern</th><th>Rounds</th></tr></thead>
         <tbody id="multiplierBody"></tbody>
@@ -169,13 +173,13 @@
     </div>
 
     <div class="panel">
-      <div class="panel-title">Points by depth <span class="note">each animal chosen costs &minus;1; a hit additionally pays 2x&rarr;2.7 · 3x&rarr;3.6 · 4x&rarr;4.5 · 5x&rarr;5.4 · 6x&rarr;6.3</span></div>
+      <div class="panel-title">Points by depth</div>
       <div class="stat-grid" id="pointsGrid"></div>
     </div>
 
     <div class="panel">
-      <div class="panel-title">Bid ledger <span class="note">per-round breakdown of what you staked and won/lost</span></div>
-      <div class="history-scroll" id="bidLedgerScroll" style="max-height:397px;">
+      <div class="panel-title">Bid ledger</div>
+      <div class="history-scroll" id="bidLedgerScroll">
         <table id="bidLedgerTable">
           <thead><tr><th>#</th><th>Bids</th><th>Result</th><th>Net</th><th>Running total</th></tr></thead>
           <tbody id="bidLedgerBody"><tr><td colspan="5" class="empty">No rounds logged yet.</td></tr></tbody>
@@ -202,7 +206,7 @@
     </div>
   </div>
 
-  <footer>Six Animals — a plain record, not a system.</footer>
+  <footer></footer>
 </div>
 
 <script>
@@ -365,10 +369,6 @@ function openApp(){
 function buildDepthPicker(){
   const wrap = document.getElementById('depthPicker');
   wrap.innerHTML = '';
-  const label = document.createElement('span');
-  label.className = 'hint'; label.style.marginRight = '4px';
-  label.textContent = 'Highlight picks for:';
-  wrap.appendChild(label);
   for(let d=1; d<=6; d++){
     const btn = document.createElement('button');
     btn.className = 'chip' + (selectedRanks.has(d) ? ' active' : '');
@@ -475,9 +475,16 @@ function renderHistory(){
   rounds.forEach((h, i)=>{
     const idx = offset + i; // real index into state.history / roundsLog
     if(editingIndex === idx){
+      const bids = bidsLog[idx] || {l:0,t:0,f:0,w:0,b:0,p:0};
+      const bidInputs = ANIMALS.map(a=>`<span class="edit-bid"><span class="icon">${a.icon}</span><input type="number" min="0" step="any" id="editBid-${a.code}" value="${bids[a.code]||''}" placeholder="0"></span>`).join('');
       rowsHtml.push(`<tr class="edit-row">
         <td>${h.round}</td>
-        <td colspan="9"><input type="text" id="editInput" value="${roundsLog[idx]}"></td>
+        <td colspan="9">
+          <div class="edit-form">
+            <input type="text" id="editInput" value="${roundsLog[idx]}" placeholder="result, e.g. l2 w3">
+            <div class="edit-bids">${bidInputs}</div>
+          </div>
+        </td>
         <td>
           <button class="tiny" onclick="saveEdit(${idx})">Save</button>
           <button class="tiny ghost" onclick="cancelEdit()">X</button>
@@ -522,6 +529,8 @@ function renderHistory(){
 function scrollLedgerToLatest(){
   const el = document.getElementById('historyScroll');
   if(el) el.scrollTop = el.scrollHeight;
+  const bidEl = document.getElementById('bidLedgerScroll');
+  if(bidEl) bidEl.scrollTop = bidEl.scrollHeight;
 }
 
 function startEdit(idx){ editingIndex = idx; deletingIndex = null; renderHistory(); }
@@ -531,6 +540,13 @@ function saveEdit(idx){
   const v = validateEntry(el.value);
   if(!v.ok){ alert(v.error); return; }
   roundsLog[idx] = el.value.trim();
+  const newBids = {};
+  ANIMALS.forEach(a=>{
+    const bidEl = document.getElementById('editBid-'+a.code);
+    const val = bidEl ? parseFloat(bidEl.value) : 0;
+    newBids[a.code] = (isNaN(val) || val < 0) ? 0 : val;
+  });
+  bidsLog[idx] = newBids;
   editingIndex = null;
   replay();
   renderAll();
@@ -566,12 +582,8 @@ function buildWindowPicker(){
 }
 
 function updateWindowHint(){
-  const total = state.history.length;
-  const shown = windowedHistory().length;
   const hint = document.getElementById('windowHint');
-  hint.textContent = statsWindow==='all'
-    ? `Showing all ${total} logged round${total===1?'':'s'}.`
-    : `Showing the last ${shown} of ${total} logged round${total===1?'':'s'}.`;
+  if(hint) hint.textContent = '';
 }
 
 function renderStats(){
@@ -651,9 +663,17 @@ function renderBidLedger(){
   }
   let running = 0;
   const rowsHtml = rounds.map(h=>{
-    const bidStr = ANIMALS.filter(a=>(h.bids && h.bids[a.code] > 0))
-      .map(a=>`${a.name[0]}:${h.bids[a.code]}`).join(' ') || '—';
-    const actualStr = Object.entries(h.actual).map(([c,val])=>byCode[c].name[0]+val).join(' ');
+    const hadAnyBid = ANIMALS.some(a=>(h.bids && h.bids[a.code] > 0));
+    const bidParts = ANIMALS.filter(a=>(h.bids && h.bids[a.code] > 0)).map(a=>{
+      const hit = h.actual[a.code] !== undefined;
+      return `<span class="${hit?'pos':'neg'}">${a.name[0]}:${h.bids[a.code]}</span>`;
+    });
+    const bidStr = bidParts.length ? bidParts.join(' ') : '—';
+    const resultParts = Object.entries(h.actual).map(([c,val])=>{
+      const cls = hadAnyBid ? ((h.bids && h.bids[c] > 0) ? 'pos' : 'neg') : '';
+      return `<span class="${cls}">${byCode[c].name[0]}${val}</span>`;
+    });
+    const actualStr = resultParts.join(' ');
     const net = h.bidNet || 0;
     running += net;
     return `<tr><td>${h.round}</td><td>${bidStr}</td><td>${actualStr}</td><td class="${ptsClass(net)}">${fmt(net)}</td><td class="${ptsClass(running)}">${fmt(running)}</td></tr>`;
