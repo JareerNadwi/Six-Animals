@@ -630,7 +630,7 @@ function buildWindowPicker(){
     const btn = document.createElement('button');
     btn.className = 'chip' + (statsWindow === opt ? ' active' : '');
     btn.textContent = opt==='all' ? 'All' : opt;
-    btn.onclick = ()=>{ statsWindow = opt; applyAutoSelection(); renderBoard(); renderHistory(); renderStats(); renderMultiplierSummary(); renderBidLedger(); buildWindowPicker(); updateWindowHint(); saveState(); };
+    btn.onclick = ()=>{ statsWindow = opt; applyAutoSelection(); renderBoard(); renderHistory(); renderStats(); renderMultiplierSummary(); renderBidLedger(); buildWindowPicker(); updateWindowHint(); scrollLedgerToLatest(); saveState(); };
     wrap.appendChild(btn);
   });
 }
