@@ -407,11 +407,12 @@ function allNonEmptyRankSubsets(){
 function scoreRankCombo(ranks, rounds){
   let total = 0;
   rounds.forEach(h=>{
+    let hitPayout = 0;
     ranks.forEach(r=>{
       const code = h.ranking[r-1];
-      if(h.actual[code] !== undefined){ total += payoutPoints(h.actual[code]); }
-      else{ total += -1; }
+      if(h.actual[code] !== undefined){ hitPayout += payoutPoints(h.actual[code]); }
     });
+    total += hitPayout - ranks.length; // -1 per rank chosen, regardless of outcome, plus payout on hit
   });
   return total;
 }
