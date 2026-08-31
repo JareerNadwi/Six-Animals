@@ -99,7 +99,7 @@
   .edit-bid .icon{ font-size:13px; }
   .edit-bid input{ width:44px !important; background:transparent; border:none; color:var(--cream); font-family:var(--mono); font-size:12px; padding:0; }
   .edit-bid input:focus{ outline:none; }
-  .round-row{ display:grid; grid-template-columns: 2fr 1fr 1fr; gap:10px; margin-top:12px; align-items:stretch; }
+  .round-row{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:10px; margin-top:12px; align-items:stretch; }
   @media (max-width:720px){ .round-row{ grid-template-columns: 1fr; } }
   .round-input-group{ display:flex; gap:10px; flex-wrap:wrap; }
   .round-input-group input, #startingBalanceInput{ flex:1; min-width:140px; background: var(--flip-bg); color: var(--cream); border:1px solid var(--panel-line); border-radius:3px; padding:8px 10px; font-family:var(--mono); font-size:14px; height:40px; box-sizing:border-box; }
@@ -108,7 +108,6 @@
   .mini-v{ font-size:15px; font-weight:700; color: var(--cream); }
   .mini-box input{ background:transparent; border:none; color:var(--cream); font-family:var(--mono); font-size:15px; padding:0; width:100%; }
   .mini-box input:focus{ outline:none; }
-  .round-input-group button{ padding: 8px 16px; height:40px; box-sizing:border-box; }
   .timer-disp{ font-family: var(--mono); font-size:11px; margin-left:6px; opacity:0.8; }
   .timer-disp.timer-warn{ color: var(--loss); font-weight:700; opacity:1; animation: blinkWarn 0.8s steps(1) infinite; }
   button#submitRoundBtn.timer-done{ background: var(--loss); color:#fff; animation: blinkWarn 0.8s steps(1) infinite; }
@@ -163,7 +162,6 @@
         <div class="round-row">
           <div class="round-input-group">
             <input type="text" id="actualInput" placeholder="e.g. l2 w3" onkeydown="if(event.key==='Enter')submitRound()">
-            <button id="submitRoundBtn" onclick="submitRound()">Log result &amp; advance <span id="roundTimerDisplay" class="timer-disp">40s</span></button>
           </div>
           <div class="mini-box">
             <div class="mini-k">Balance</div>
@@ -176,6 +174,9 @@
         </div>
         <div class="error" id="roundError"></div>
         <div class="bid-row" id="bidRow"></div>
+        <div class="row center">
+          <button id="submitRoundBtn" onclick="submitRound()">Log result &amp; advance <span id="roundTimerDisplay" class="timer-disp">40s</span></button>
+        </div>
       </div>
     </div>
 
