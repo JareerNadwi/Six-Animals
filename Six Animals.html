@@ -86,6 +86,8 @@
   .stat-card .k{ font-family: var(--display); text-transform:uppercase; font-size: 10.5px; color: var(--cream-dim); letter-spacing:0.06em; }
   .stat-card .v{ font-size: 20px; margin-top: 4px; font-weight:700; }
   .stat-card .v.pos{ color: var(--win); } .stat-card .v.neg{ color: var(--loss); }
+  .bid-cards-row{ display:flex; justify-content:center; align-items:stretch; gap:10px; margin-top:10px; flex-wrap:wrap; }
+  .bid-cards-row .stat-card{ flex:0 0 auto; text-align:center; }
   .combo-label{ font-size: 12px; color: var(--cream-dim); }
   .combo-label b{ color: var(--brass); }
   footer{ text-align:center; color: var(--cream-dim); font-size: 11px; margin-top: 30px; }
@@ -209,6 +211,7 @@
     <div class="panel">
       <div class="panel-title">Points by depth</div>
       <div class="stat-grid" id="pointsGrid"></div>
+      <div class="bid-cards-row" id="bidCardsRow"></div>
     </div>
 
     <div class="panel">
@@ -1128,11 +1131,6 @@ function renderStats(){
   } else {
     html += `<div class="stat-card"><div class="k">Best combo</div><div class="v">—</div></div>`;
   }
-  // Placeholder that renderBidCards() fills — display:contents makes its children act
-  // as direct grid items of #pointsGrid, so they share the exact same column tracks
-  // (and therefore the exact same width) as the cards above, instead of living in a
-  // separate flex row that could size differently.
-  html += `<div id="bidCardsRow" style="display:contents"></div>`;
 
   grid.innerHTML = html;
   renderBidCards();
@@ -1156,7 +1154,23 @@ function renderBidCards(){
   row.innerHTML =
     `<div class="stat-card"><div class="k">Your bids (won/lost)</div><div class="v ${bidCls}">${bidTotal>0?'+':''}${fmtDisplay(bidTotal)}</div></div>
      <div class="stat-card"><div class="k">Trails</div><div class="v">${fmtDisplay(trails)}</div></div>`;
+  matchBidCardWidthToPointsGrid();
 }
+
+// Keeps the centered "Your bids"/"Trails" cards pixel-identical in width to the
+// #pointsGrid cards above, whose width is set by a responsive auto-fit grid (so it
+// changes with screen size). Reading the real rendered width here — rather than
+// guessing a fixed px value — is what keeps the two rows matching at every size.
+function matchBidCardWidthToPointsGrid(){
+  const sample = document.querySelector('#pointsGrid .stat-card');
+  const row = document.getElementById('bidCardsRow');
+  if(!sample || !row) return;
+  const w = sample.getBoundingClientRect().width;
+  if(w > 0){
+    row.querySelectorAll('.stat-card').forEach(card=>{ card.style.width = w + 'px'; });
+  }
+}
+window.addEventListener('resize', ()=>{ if(document.getElementById('bidCardsRow')) matchBidCardWidthToPointsGrid(); });
 
 function patternLabel(values){
   const counts = {};
