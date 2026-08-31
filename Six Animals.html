@@ -46,6 +46,8 @@
   button.ghost:hover{ background: rgba(201,162,39,0.1); }
   button.chip{ padding: 7px 12px; font-size: 12.5px; background: transparent; color: var(--cream-dim); border: 1px solid var(--panel-line); min-width: 38px; }
   button.chip.active{ background: var(--brass); color:#1a1406; border-color: var(--brass); }
+  button.chip.mode{ border-color: var(--win); color: var(--win); font-weight:700; }
+  button.chip.mode.active{ background: var(--win); color:#08160f; border-color: var(--win); }
   button.chip:disabled{ opacity:0.35; cursor:not-allowed; }
   button.tiny{ padding: 4px 8px; font-size: 10.5px; }
   button.tiny.danger{ color: #fff; background: var(--loss); }
@@ -68,8 +70,7 @@
   .runner .metric-row{ margin-top: 3px; font-size: 8.5px; color: var(--cream-dim); display:flex; justify-content:center; gap:5px; }
   .runner .metric-row b{ color: var(--cream); font-weight:700; }
   .board-panel{ background: var(--panel); }
-  .sticky-stack{ position: sticky; top: 0; z-index: 40; background: var(--board-bg); box-shadow: 0 6px 12px -6px rgba(0,0,0,0.5); padding-bottom: 4px; }
-  @media (max-width: 720px){ .sticky-stack{ position: static; box-shadow: none; } }
+  .sticky-stack{ }
   .flip{ animation: flipIn 0.5s ease; }
   @keyframes flipIn{ 0%{ transform: rotateX(90deg); opacity:0.2; } 60%{ transform: rotateX(-8deg); } 100%{ transform: rotateX(0deg); } }
   table{ width:100%; border-collapse: collapse; font-size: 12.5px; }
@@ -96,6 +97,19 @@
   .edit-bid .icon{ font-size:13px; }
   .edit-bid input{ width:44px !important; background:transparent; border:none; color:var(--cream); font-family:var(--mono); font-size:12px; padding:0; }
   .edit-bid input:focus{ outline:none; }
+  .round-row{ display:grid; grid-template-columns: 2fr 1fr 1fr; gap:10px; margin-top:12px; align-items:stretch; }
+  @media (max-width:720px){ .round-row{ grid-template-columns: 1fr; } }
+  .round-input-group{ display:flex; gap:10px; flex-wrap:wrap; }
+  .round-input-group input{ flex:1; min-width:140px; background: var(--flip-bg); color: var(--cream); border:1px solid var(--panel-line); border-radius:3px; padding:10px 12px; font-family:var(--mono); font-size:14px; }
+  .mini-box{ background: var(--flip-bg); border:1px solid var(--panel-line); border-radius:4px; padding:10px 12px; display:flex; flex-direction:column; justify-content:center; }
+  .mini-k{ font-family: var(--display); text-transform:uppercase; font-size:10px; color:var(--cream-dim); letter-spacing:0.06em; }
+  .mini-v{ font-size:16px; font-weight:700; margin-top:4px; color: var(--cream); }
+  .mini-box input{ background:transparent; border:none; color:var(--cream); font-family:var(--mono); font-size:15px; margin-top:4px; padding:0; width:100%; }
+  .mini-box input:focus{ outline:none; }
+  .timer-disp{ font-family: var(--mono); font-size:11px; margin-left:6px; opacity:0.8; }
+  button#submitRoundBtn.timer-warn{ background: var(--loss); color:#fff; animation: blinkWarn 0.8s steps(1) infinite; }
+  @keyframes blinkWarn{ 50% { opacity: 0.35; } }
+  input[readonly]{ opacity:0.55; }
   .bid-row{ display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-top:10px; }
   @media (max-width: 480px){ .bid-row{ grid-template-columns: repeat(2, 1fr); } }
   .bid-box{ display:flex; align-items:center; gap:6px; background: var(--flip-bg); border:1px solid var(--panel-line);
@@ -119,6 +133,9 @@
       <div class="hint">Paste past round results, one per line — each token is a letter + multiplier (2–6), e.g. <code>l2 w3</code> means Lion showed on 2 dice, Wolf on 3. Codes: l=Lion, t=Tiger, f=Fox, w=Wolf, b=Bear, p=Panda. Numbers across one line can't total more than 6 — there are only 6 dice.</div>
       <textarea id="seedInput" rows="20" placeholder="l2 w3&#10;t3 p3&#10;b6&#10;... (20+ lines)"></textarea>
       <div class="error" id="seedError"></div>
+      <div class="row">
+        <input type="number" id="startingBalanceInput" min="0" step="any" placeholder="Starting balance (optional)">
+      </div>
       <div class="row center">
         <button onclick="seedBoard()">Load history &amp; open board</button>
         <button class="ghost" onclick="skipSeed()">Skip — start blank</button>
@@ -129,16 +146,26 @@
   <div id="app" style="display:none;">
     <div class="sticky-stack">
       <div class="panel board-panel">
-        <div class="panel-title">Current board — Round <span id="roundNum">1</span></div>
+        <div class="panel-title" style="justify-content:flex-start;">Current board — Round <span id="roundNum">1</span></div>
         <div class="depth-picker" id="depthPicker"></div>
         <div class="board" id="board"></div>
       </div>
 
       <div class="panel board-panel">
         <div class="panel-title">Log this round's result</div>
-        <div class="row">
-          <input type="text" id="actualInput" placeholder="e.g. l2 w3" onkeydown="if(event.key==='Enter')submitRound()">
-          <button onclick="submitRound()">Log result &amp; advance</button>
+        <div class="round-row">
+          <div class="round-input-group">
+            <input type="text" id="actualInput" placeholder="e.g. l2 w3" onkeydown="if(event.key==='Enter')submitRound()">
+            <button id="submitRoundBtn" onclick="submitRound()">Log result &amp; advance <span id="roundTimerDisplay" class="timer-disp">40s</span></button>
+          </div>
+          <div class="mini-box">
+            <div class="mini-k">Balance</div>
+            <div class="mini-v" id="balanceDisplay">0</div>
+          </div>
+          <div class="mini-box">
+            <div class="mini-k">Quick bid</div>
+            <input type="number" id="quickBidAmount" min="0" step="any" placeholder="amount" oninput="onQuickBidInput()">
+          </div>
         </div>
         <div class="error" id="roundError"></div>
         <div class="bid-row" id="bidRow"></div>
@@ -228,6 +255,7 @@ let currentBids = {l:0,t:0,f:0,w:0,b:0,p:0};
 let bidHistory = []; // independent, persistent betting record — survives "Clear rounds": {id, round, ranking, actual, bids, bidNet}
 let nextBidId = 1;
 let bidStatsWindow = 'all'; // independent window selector for the Bid Ledger
+let startingBalance = 0;
 let baselineFreq = null; // when set (by "Clear rounds"), replay() starts from this instead of seedLines
 let baselineGap = null;
 let selectedRanks = new Set([1]); // 1-indexed rank positions, drives board highlight + custom combo
@@ -341,6 +369,11 @@ function replay(){
 }
 
 // ---------- seeding ----------
+function readStartingBalanceInput(){
+  const val = parseFloat(document.getElementById('startingBalanceInput').value);
+  startingBalance = isNaN(val) ? 0 : val;
+}
+
 function seedBoard(){
   const raw = document.getElementById('seedInput').value;
   const lines = raw.split('\n').map(l=>l.trim()).filter(l=>l.length);
@@ -356,6 +389,7 @@ function seedBoard(){
   err.classList.remove('show');
   seedLines = lines;
   roundsLog = [];
+  readStartingBalanceInput();
   replay();
   openApp();
 }
@@ -364,6 +398,7 @@ function skipSeed(){
   seedLines = [];
   roundsLog = [];
   document.getElementById('seedError').classList.remove('show');
+  readStartingBalanceInput();
   replay();
   openApp();
 }
@@ -373,6 +408,31 @@ function openApp(){
   document.getElementById('app').style.display = 'block';
   buildBidRow();
   renderAll();
+  startRoundTimer();
+}
+
+// ---------- round timer ----------
+let roundTimerInterval = null;
+let roundTimerRemaining = 40;
+
+function startRoundTimer(){
+  clearInterval(roundTimerInterval);
+  roundTimerRemaining = 40;
+  updateTimerDisplay();
+  roundTimerInterval = setInterval(()=>{
+    roundTimerRemaining--;
+    if(roundTimerRemaining <= 0){ roundTimerRemaining = 0; clearInterval(roundTimerInterval); }
+    updateTimerDisplay();
+  }, 1000);
+}
+
+function updateTimerDisplay(){
+  const btn = document.getElementById('submitRoundBtn');
+  const disp = document.getElementById('roundTimerDisplay');
+  if(disp) disp.textContent = roundTimerRemaining + 's';
+  if(!btn) return;
+  if(roundTimerRemaining <= 10){ btn.classList.add('timer-warn'); }
+  else{ btn.classList.remove('timer-warn'); }
 }
 
 // ---------- board / selection ----------
@@ -380,7 +440,7 @@ function buildDepthPicker(){
   const wrap = document.getElementById('depthPicker');
   wrap.innerHTML = '';
   const bcsfBtn = document.createElement('button');
-  bcsfBtn.className = 'chip' + (autoMode ? ' active' : '');
+  bcsfBtn.className = 'chip mode' + (autoMode ? ' active' : '');
   bcsfBtn.textContent = 'BCSF';
   bcsfBtn.onclick = ()=>{
     autoMode = !autoMode;
@@ -390,7 +450,7 @@ function buildDepthPicker(){
   wrap.appendChild(bcsfBtn);
 
   const pct70Btn = document.createElement('button');
-  pct70Btn.className = 'chip' + (mode70 ? ' active' : '');
+  pct70Btn.className = 'chip mode' + (mode70 ? ' active' : '');
   pct70Btn.textContent = '70%';
   pct70Btn.onclick = ()=>{
     mode70 = !mode70;
@@ -400,7 +460,7 @@ function buildDepthPicker(){
   wrap.appendChild(pct70Btn);
 
   const bc4Btn = document.createElement('button');
-  bc4Btn.className = 'chip' + (mode4 ? ' active' : '');
+  bc4Btn.className = 'chip mode' + (mode4 ? ' active' : '');
   bc4Btn.textContent = 'BC4';
   bc4Btn.onclick = ()=>{
     mode4 = !mode4;
@@ -578,10 +638,28 @@ function buildBidRow(){
     box.className = 'bid-box';
     box.innerHTML = `<span class="icon">${a.icon}</span><input type="number" min="0" step="any" placeholder="0" id="bid-${a.code}">`;
     wrap.appendChild(box);
-    box.querySelector('input').addEventListener('input', (e)=>{
+    const inp = box.querySelector('input');
+    inp.addEventListener('input', (e)=>{
       const val = parseFloat(e.target.value);
       currentBids[a.code] = isNaN(val) || val < 0 ? 0 : val;
     });
+    inp.addEventListener('dblclick', ()=>{
+      const quickEl = document.getElementById('quickBidAmount');
+      const qv = parseFloat(quickEl.value);
+      if(quickEl.value === '' || isNaN(qv)) return;
+      const v = qv < 0 ? 0 : qv;
+      inp.value = v;
+      currentBids[a.code] = v;
+    });
+  });
+}
+
+function onQuickBidInput(){
+  const el = document.getElementById('quickBidAmount');
+  const hasValue = el.value !== '' && !isNaN(parseFloat(el.value));
+  ANIMALS.forEach(a=>{
+    const bidEl = document.getElementById('bid-'+a.code);
+    if(bidEl) bidEl.readOnly = hasValue;
   });
 }
 
@@ -589,8 +667,21 @@ function resetBidInputs(){
   currentBids = {l:0,t:0,f:0,w:0,b:0,p:0};
   ANIMALS.forEach(a=>{
     const el = document.getElementById('bid-'+a.code);
-    if(el) el.value = '';
+    if(el){ el.value = ''; el.readOnly = false; }
   });
+  const quickEl = document.getElementById('quickBidAmount');
+  if(quickEl) quickEl.value = '';
+}
+
+function computeBalance(){
+  let net = 0;
+  bidHistory.forEach(h=>{ net += h.bidNet || 0; });
+  return startingBalance + net;
+}
+
+function renderBalance(){
+  const el = document.getElementById('balanceDisplay');
+  if(el) el.textContent = fmt(computeBalance());
 }
 
 function submitRound(){
@@ -612,6 +703,7 @@ function submitRound(){
   renderAll();
   scrollLedgerToLatest();
   scrollBidLedgerToLatest();
+  startRoundTimer();
   input.focus();
 }
 
@@ -841,10 +933,10 @@ function renderMultiplierSummary(){
 }
 
 function renderBidLedger(){
-  const rounds = bidWindowedHistory();
+  const rounds = bidWindowedHistory().filter(h => ANIMALS.some(a => h.bids && h.bids[a.code] > 0));
   const body = document.getElementById('bidLedgerBody');
   if(rounds.length===0){
-    body.innerHTML = '<tr><td colspan="5" class="empty">No rounds logged yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" class="empty">No bids placed yet.</td></tr>';
     return;
   }
   let running = 0;
@@ -881,7 +973,7 @@ function buildBidWindowPicker(){
   });
 }
 
-function renderAll(){ applyAutoSelection(); renderBoard(); renderHistory(); buildWindowPicker(); updateWindowHint(); renderStats(); renderMultiplierSummary(); renderBidLedger(); buildBidWindowPicker(); saveState(); }
+function renderAll(){ applyAutoSelection(); renderBoard(); renderHistory(); buildWindowPicker(); updateWindowHint(); renderStats(); renderMultiplierSummary(); renderBidLedger(); buildBidWindowPicker(); renderBalance(); saveState(); }
 
 function exportCSV(){
   if(state.history.length===0) return;
@@ -908,12 +1000,14 @@ function cancelReset(){
   document.getElementById('resetBtn').style.display = 'inline-block';
 }
 function resetAll(){
+  clearInterval(roundTimerInterval);
   seedLines = []; roundsLog = []; bidIdLog = []; bidHistory = []; nextBidId = 1; bidStatsWindow = 'all';
-  baselineFreq = null; baselineGap = null;
+  baselineFreq = null; baselineGap = null; startingBalance = 0;
   selectedRanks = new Set([1]); autoMode = false; mode70 = false; mode4 = false;
   editingIndex=null; deletingIndex=null; state=null; statsWindow='all';
   resetBidInputs();
   document.getElementById('seedInput').value = '';
+  document.getElementById('startingBalanceInput').value = '';
   document.getElementById('seedError').classList.remove('show');
   document.getElementById('app').style.display = 'none';
   document.getElementById('landing').style.display = 'block';
@@ -965,7 +1059,7 @@ async function saveState(){
       seedLines, roundsLog, bidIdLog, bidHistory, nextBidId, bidStatsWindow,
       baselineFreq, baselineGap,
       selectedRanks: Array.from(selectedRanks),
-      statsWindow, appOpen, autoMode, mode70, mode4
+      statsWindow, appOpen, autoMode, mode70, mode4, startingBalance
     };
     await new Promise((resolve, reject)=>{
       const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -1002,6 +1096,7 @@ async function restoreFromSave(){
   bidHistory = saved.bidHistory || [];
   nextBidId = saved.nextBidId || 1;
   bidStatsWindow = saved.bidStatsWindow || 'all';
+  startingBalance = saved.startingBalance || 0;
   baselineFreq = saved.baselineFreq || null;
   baselineGap = saved.baselineGap || null;
   selectedRanks = new Set(saved.selectedRanks && saved.selectedRanks.length ? saved.selectedRanks : [1]);
@@ -1017,6 +1112,7 @@ async function restoreFromSave(){
     renderAll();
     scrollLedgerToLatest();
     scrollBidLedgerToLatest();
+    startRoundTimer();
   } else if(seedLines.length || roundsLog.length){
     // had a seed typed but hadn't opened the board yet — restore the textarea text
     document.getElementById('seedInput').value = seedLines.join('\n');
