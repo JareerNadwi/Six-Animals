@@ -86,6 +86,8 @@
   .stat-card .k{ font-family: var(--display); text-transform:uppercase; font-size: 10.5px; color: var(--cream-dim); letter-spacing:0.06em; }
   .stat-card .v{ font-size: 20px; margin-top: 4px; font-weight:700; }
   .stat-card .v.pos{ color: var(--win); } .stat-card .v.neg{ color: var(--loss); }
+  .bid-cards-row{ display:flex; justify-content:center; gap:10px; margin-top:10px; flex-wrap:wrap; }
+  .bid-cards-row .stat-card{ min-width:180px; flex: 0 1 220px; }
   .combo-label{ font-size: 12px; color: var(--cream-dim); }
   .combo-label b{ color: var(--brass); }
   footer{ text-align:center; color: var(--cream-dim); font-size: 11px; margin-top: 30px; }
@@ -100,14 +102,16 @@
   .round-row{ display:grid; grid-template-columns: 2fr 1fr 1fr; gap:10px; margin-top:12px; align-items:stretch; }
   @media (max-width:720px){ .round-row{ grid-template-columns: 1fr; } }
   .round-input-group{ display:flex; gap:10px; flex-wrap:wrap; }
-  .round-input-group input{ flex:1; min-width:140px; background: var(--flip-bg); color: var(--cream); border:1px solid var(--panel-line); border-radius:3px; padding:10px 12px; font-family:var(--mono); font-size:14px; }
-  .mini-box{ background: var(--flip-bg); border:1px solid var(--panel-line); border-radius:4px; padding:10px 12px; display:flex; flex-direction:column; justify-content:center; }
-  .mini-k{ font-family: var(--display); text-transform:uppercase; font-size:10px; color:var(--cream-dim); letter-spacing:0.06em; }
-  .mini-v{ font-size:16px; font-weight:700; margin-top:4px; color: var(--cream); }
-  .mini-box input{ background:transparent; border:none; color:var(--cream); font-family:var(--mono); font-size:15px; margin-top:4px; padding:0; width:100%; }
+  .round-input-group input{ flex:1; min-width:140px; background: var(--flip-bg); color: var(--cream); border:1px solid var(--panel-line); border-radius:3px; padding:8px 10px; font-family:var(--mono); font-size:14px; }
+  .mini-box{ background: var(--flip-bg); border:1px solid var(--panel-line); border-radius:4px; padding:8px 10px; display:flex; align-items:center; gap:6px; }
+  .mini-k{ font-family: var(--display); text-transform:uppercase; font-size:10px; color:var(--cream-dim); letter-spacing:0.06em; white-space:nowrap; }
+  .mini-v{ font-size:15px; font-weight:700; color: var(--cream); }
+  .mini-box input{ background:transparent; border:none; color:var(--cream); font-family:var(--mono); font-size:15px; padding:0; width:100%; }
   .mini-box input:focus{ outline:none; }
+  .round-input-group button{ padding: 8px 16px; }
   .timer-disp{ font-family: var(--mono); font-size:11px; margin-left:6px; opacity:0.8; }
-  button#submitRoundBtn.timer-warn{ background: var(--loss); color:#fff; animation: blinkWarn 0.8s steps(1) infinite; }
+  .timer-disp.timer-warn{ color: var(--loss); font-weight:700; opacity:1; animation: blinkWarn 0.8s steps(1) infinite; }
+  button#submitRoundBtn.timer-done{ background: var(--loss); color:#fff; animation: blinkWarn 0.8s steps(1) infinite; }
   @keyframes blinkWarn{ 50% { opacity: 0.35; } }
   input[readonly]{ opacity:0.55; }
   .bid-row{ display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-top:10px; }
@@ -129,13 +133,16 @@
       <div class="sub">Since-last-seen tracking for a 6-animal dice draw — logged plainly, no promises attached.</div>
     </header>
     <div class="panel">
+      <div class="panel-title">Starting balance</div>
+      <div class="row">
+        <input type="number" id="startingBalanceInput" min="0" step="any" placeholder="Starting balance (optional)">
+      </div>
+    </div>
+    <div class="panel">
       <div class="panel-title">Seed the board</div>
       <div class="hint">Paste past round results, one per line — each token is a letter + multiplier (2–6), e.g. <code>l2 w3</code> means Lion showed on 2 dice, Wolf on 3. Codes: l=Lion, t=Tiger, f=Fox, w=Wolf, b=Bear, p=Panda. Numbers across one line can't total more than 6 — there are only 6 dice.</div>
       <textarea id="seedInput" rows="20" placeholder="l2 w3&#10;t3 p3&#10;b6&#10;... (20+ lines)"></textarea>
       <div class="error" id="seedError"></div>
-      <div class="row">
-        <input type="number" id="startingBalanceInput" min="0" step="any" placeholder="Starting balance (optional)">
-      </div>
       <div class="row center">
         <button onclick="seedBoard()">Load history &amp; open board</button>
         <button class="ghost" onclick="skipSeed()">Skip — start blank</button>
@@ -203,6 +210,7 @@
     <div class="panel">
       <div class="panel-title">Points by depth</div>
       <div class="stat-grid" id="pointsGrid"></div>
+      <div class="bid-cards-row" id="bidCardsRow"></div>
     </div>
 
     <div class="panel">
@@ -429,10 +437,15 @@ function startRoundTimer(){
 function updateTimerDisplay(){
   const btn = document.getElementById('submitRoundBtn');
   const disp = document.getElementById('roundTimerDisplay');
-  if(disp) disp.textContent = roundTimerRemaining + 's';
-  if(!btn) return;
-  if(roundTimerRemaining <= 10){ btn.classList.add('timer-warn'); }
-  else{ btn.classList.remove('timer-warn'); }
+  if(disp){
+    disp.textContent = roundTimerRemaining + 's';
+    if(roundTimerRemaining <= 10 && roundTimerRemaining > 0){ disp.classList.add('timer-warn'); }
+    else{ disp.classList.remove('timer-warn'); }
+  }
+  if(btn){
+    if(roundTimerRemaining <= 0){ btn.classList.add('timer-done'); }
+    else{ btn.classList.remove('timer-done'); }
+  }
 }
 
 // ---------- board / selection ----------
@@ -648,8 +661,14 @@ function buildBidRow(){
       const qv = parseFloat(quickEl.value);
       if(quickEl.value === '' || isNaN(qv)) return;
       const v = qv < 0 ? 0 : qv;
-      inp.value = v;
-      currentBids[a.code] = v;
+      if(parseFloat(inp.value) === v){
+        // already pasted -> second double-tap clears it
+        inp.value = '';
+        currentBids[a.code] = 0;
+      } else {
+        inp.value = v;
+        currentBids[a.code] = v;
+      }
     });
   });
 }
@@ -880,6 +899,14 @@ function renderStats(){
   }).join('');
   const comboCls = comboPoints>0?'pos':(comboPoints<0?'neg':'');
   html += `<div class="stat-card"><div class="k">Ranks ${comboLabelText()}</div><div class="v ${comboCls}">${comboPoints>0?'+':''}${fmt(comboPoints)}</div></div>`;
+
+  // "Best depth" — whichever of the above scored highest this window, so you don't have to scan every card
+  const allOptions = Object.keys(labels).map(k=>({label: labels[k], v: pointsTotals[k]}));
+  allOptions.push({label: `Ranks ${comboLabelText()}`, v: comboPoints});
+  const best = allOptions.reduce((a,b)=> b.v > a.v ? b : a);
+  const bestCls = best.v>0?'pos':(best.v<0?'neg':'');
+  html += `<div class="stat-card"><div class="k">Best depth this window</div><div class="v ${bestCls}">${best.label}: ${best.v>0?'+':''}${fmt(best.v)}</div></div>`;
+
   grid.innerHTML = html;
   renderBidCards();
 }
@@ -890,7 +917,7 @@ function bidWindowedHistory(){
 }
 
 function renderBidCards(){
-  const grid = document.getElementById('pointsGrid');
+  const row = document.getElementById('bidCardsRow');
   const rounds = bidWindowedHistory();
   let bidTotal = 0, totalWagered = 0;
   rounds.forEach(h=>{
@@ -899,10 +926,9 @@ function renderBidCards(){
   });
   const bidCls = bidTotal>0?'pos':(bidTotal<0?'neg':'');
   const trails = totalWagered * 0.025;
-  grid.insertAdjacentHTML('beforeend',
+  row.innerHTML =
     `<div class="stat-card"><div class="k">Your bids (won/lost)</div><div class="v ${bidCls}">${bidTotal>0?'+':''}${fmt(bidTotal)}</div></div>
-     <div class="stat-card"><div class="k">Trails</div><div class="v">${fmt(trails)}</div></div>`
-  );
+     <div class="stat-card"><div class="k">Trails</div><div class="v">${fmt(trails)}</div></div>`;
 }
 
 function patternLabel(values){
