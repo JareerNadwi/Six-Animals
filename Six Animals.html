@@ -171,7 +171,7 @@
           </div>
           <div class="mini-box">
             <div class="mini-k">Quick bid</div>
-            <input type="number" id="quickBidAmount" min="0" step="any" placeholder="amount" oninput="onQuickBidInput()">
+            <input type="text" inputmode="decimal" id="quickBidAmount" placeholder="amount" oninput="onQuickBidInput()">
           </div>
         </div>
         <div class="error" id="roundError"></div>
@@ -678,37 +678,44 @@ function buildBidRow(){
   ANIMALS.forEach(a=>{
     const box = document.createElement('div');
     box.className = 'bid-box';
-    box.innerHTML = `<span class="icon">${a.icon}</span><input type="number" min="0" step="any" placeholder="0" id="bid-${a.code}">`;
+    box.innerHTML = `<span class="icon">${a.icon}</span><input type="text" inputmode="decimal" placeholder="0" id="bid-${a.code}">`;
     wrap.appendChild(box);
     const inp = box.querySelector('input');
+    attachAmountFormatting(inp);
     inp.addEventListener('input', (e)=>{
-      const val = parseFloat(e.target.value);
+      const v = sanitizeAmountTyping(inp);
+      const val = parseAmountInput(v);
       currentBids[a.code] = isNaN(val) || val < 0 ? 0 : val;
     });
     inp.addEventListener('dblclick', ()=>{
       const quickEl = document.getElementById('quickBidAmount');
-      const qv = parseFloat(quickEl.value);
+      const qv = parseAmountInput(quickEl.value);
       if(quickEl.value === '' || isNaN(qv)) return;
       const v = qv < 0 ? 0 : qv;
-      if(parseFloat(inp.value) === v){
+      if(parseAmountInput(inp.value) === v){
         // already pasted -> second double-tap clears it
         inp.value = '';
         currentBids[a.code] = 0;
       } else {
-        inp.value = v;
+        inp.value = formatAmountForInput(v);
         currentBids[a.code] = v;
       }
     });
   });
 }
 
-function onQuickBidInput(){
+function updateBidReadonlyFromQuickBid(){
   const el = document.getElementById('quickBidAmount');
-  const hasValue = el.value !== '' && !isNaN(parseFloat(el.value));
+  const hasValue = el.value !== '' && !isNaN(parseAmountInput(el.value));
   ANIMALS.forEach(a=>{
     const bidEl = document.getElementById('bid-'+a.code);
     if(bidEl) bidEl.readOnly = hasValue;
   });
+}
+function onQuickBidInput(){
+  const el = document.getElementById('quickBidAmount');
+  sanitizeAmountTyping(el);
+  updateBidReadonlyFromQuickBid();
 }
 
 function resetBidInputs(keepQuickBid){
@@ -719,7 +726,7 @@ function resetBidInputs(keepQuickBid){
   });
   const quickEl = document.getElementById('quickBidAmount');
   if(quickEl && !keepQuickBid) quickEl.value = '';
-  if(keepQuickBid) onQuickBidInput();
+  if(keepQuickBid) updateBidReadonlyFromQuickBid();
 }
 
 function computeBalance(){
@@ -771,6 +778,44 @@ function fmtDisplay(v){
   return (neg?'-':'') + grouped + (decPart !== undefined ? '.'+decPart : '');
 }
 
+// ---------- comma-aware amount inputs (quick bid + animal bid boxes) ----------
+function parseAmountInput(str){
+  if(str === undefined || str === null) return NaN;
+  const cleaned = String(str).replace(/,/g,'').trim();
+  if(cleaned === '') return NaN;
+  return parseFloat(cleaned);
+}
+function formatAmountForInput(v){
+  if(v === undefined || v === null || v === '' || isNaN(v)) return '';
+  const num = Number(v);
+  const neg = num < 0;
+  const abs = Math.abs(num);
+  const str = String(abs);
+  const parts = str.split('.');
+  const intPart = parts[0];
+  const decPart = parts[1];
+  const grouped = intPart.length > 3
+    ? intPart.slice(0,-3).replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',' + intPart.slice(-3)
+    : intPart;
+  return (neg?'-':'') + grouped + (decPart !== undefined ? '.'+decPart : '');
+}
+function sanitizeAmountTyping(el){
+  let v = el.value.replace(/[^\d.]/g,'');
+  const firstDot = v.indexOf('.');
+  if(firstDot !== -1){ v = v.slice(0,firstDot+1) + v.slice(firstDot+1).replace(/\./g,''); }
+  if(v !== el.value) el.value = v;
+  return v;
+}
+function attachAmountFormatting(el){
+  if(!el) return;
+  el.addEventListener('focus', ()=>{ el.value = el.value.replace(/,/g,''); });
+  el.addEventListener('blur', ()=>{
+    const num = parseAmountInput(el.value);
+    el.value = isNaN(num) ? '' : formatAmountForInput(num);
+  });
+}
+attachAmountFormatting(document.getElementById('quickBidAmount'));
+
 function renderHistory(){
   const body = document.getElementById('historyBody');
   const rounds = windowedHistory();
@@ -785,7 +830,7 @@ function renderHistory(){
     if(editingIndex === idx){
       const bidEntry = bidHistory.find(b=>b.id === bidIdLog[idx]);
       const bids = (bidEntry && bidEntry.bids) || {l:0,t:0,f:0,w:0,b:0,p:0};
-      const bidInputs = ANIMALS.map(a=>`<span class="edit-bid"><span class="icon">${a.icon}</span><input type="number" min="0" step="any" id="editBid-${a.code}" value="${bids[a.code]||''}" placeholder="0"></span>`).join('');
+      const bidInputs = ANIMALS.map(a=>`<span class="edit-bid"><span class="icon">${a.icon}</span><input type="text" inputmode="decimal" id="editBid-${a.code}" value="${bids[a.code] ? formatAmountForInput(bids[a.code]) : ''}" placeholder="0"></span>`).join('');
       rowsHtml.push(`<tr class="edit-row">
         <td>${h.round}</td>
         <td colspan="9">
@@ -832,6 +877,13 @@ function renderHistory(){
   if(editingIndex !== null){
     const el = document.getElementById('editInput');
     if(el) el.focus();
+    ANIMALS.forEach(a=>{
+      const bidEl = document.getElementById('editBid-'+a.code);
+      if(bidEl){
+        attachAmountFormatting(bidEl);
+        bidEl.addEventListener('input', ()=>{ sanitizeAmountTyping(bidEl); });
+      }
+    });
   }
 }
 
@@ -855,7 +907,7 @@ function saveEdit(idx){
   const newBids = {};
   ANIMALS.forEach(a=>{
     const bidEl = document.getElementById('editBid-'+a.code);
-    const val = bidEl ? parseFloat(bidEl.value) : 0;
+    const val = bidEl ? parseAmountInput(bidEl.value) : 0;
     newBids[a.code] = (isNaN(val) || val < 0) ? 0 : val;
   });
   editingIndex = null;
