@@ -102,13 +102,13 @@
   .round-row{ display:grid; grid-template-columns: 2fr 1fr 1fr; gap:10px; margin-top:12px; align-items:stretch; }
   @media (max-width:720px){ .round-row{ grid-template-columns: 1fr; } }
   .round-input-group{ display:flex; gap:10px; flex-wrap:wrap; }
-  .round-input-group input{ flex:1; min-width:140px; background: var(--flip-bg); color: var(--cream); border:1px solid var(--panel-line); border-radius:3px; padding:8px 10px; font-family:var(--mono); font-size:14px; }
-  .mini-box{ background: var(--flip-bg); border:1px solid var(--panel-line); border-radius:4px; padding:8px 10px; display:flex; align-items:center; gap:6px; }
+  .round-input-group input, #startingBalanceInput{ flex:1; min-width:140px; background: var(--flip-bg); color: var(--cream); border:1px solid var(--panel-line); border-radius:3px; padding:8px 10px; font-family:var(--mono); font-size:14px; height:40px; box-sizing:border-box; }
+  .mini-box{ background: var(--flip-bg); border:1px solid var(--panel-line); border-radius:4px; padding:8px 10px; display:flex; align-items:center; gap:6px; height:40px; box-sizing:border-box; }
   .mini-k{ font-family: var(--display); text-transform:uppercase; font-size:10px; color:var(--cream-dim); letter-spacing:0.06em; white-space:nowrap; }
   .mini-v{ font-size:15px; font-weight:700; color: var(--cream); }
   .mini-box input{ background:transparent; border:none; color:var(--cream); font-family:var(--mono); font-size:15px; padding:0; width:100%; }
   .mini-box input:focus{ outline:none; }
-  .round-input-group button{ padding: 8px 16px; }
+  .round-input-group button{ padding: 8px 16px; height:40px; box-sizing:border-box; }
   .timer-disp{ font-family: var(--mono); font-size:11px; margin-left:6px; opacity:0.8; }
   .timer-disp.timer-warn{ color: var(--loss); font-weight:700; opacity:1; animation: blinkWarn 0.8s steps(1) infinite; }
   button#submitRoundBtn.timer-done{ background: var(--loss); color:#fff; animation: blinkWarn 0.8s steps(1) infinite; }
@@ -117,7 +117,7 @@
   .bid-row{ display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-top:10px; }
   @media (max-width: 480px){ .bid-row{ grid-template-columns: repeat(2, 1fr); } }
   .bid-box{ display:flex; align-items:center; gap:6px; background: var(--flip-bg); border:1px solid var(--panel-line);
-    border-radius:4px; padding:8px 10px; flex: 1 1 140px; }
+    border-radius:4px; padding:8px 10px; flex: 1 1 140px; height:40px; box-sizing:border-box; }
   .bid-box .icon{ font-size:18px; }
   .bid-box input{ width:100%; min-width:0; background:transparent; border:none; color:var(--cream); font-family: var(--mono); font-size:14px; padding:0; }
   .bid-box input:focus{ outline:none; }
@@ -535,9 +535,8 @@ function last10Rounds(){
   return state.history.slice(-10);
 }
 
-function computeBestCombo(){
-  const rounds = last10Rounds();
-  if(rounds.length === 0) return null;
+function computeBestComboGeneric(rounds){
+  if(!rounds || rounds.length === 0) return null;
   const scored = allNonEmptyRankSubsets().map(ranks=>({ranks, score: scoreRankCombo(ranks, rounds)}));
   scored.sort((a,b)=>{
     if(b.score !== a.score) return b.score - a.score;           // highest score wins
@@ -547,13 +546,14 @@ function computeBestCombo(){
   });
   return scored[0].ranks;
 }
+function computeBestCombo(){ return computeBestComboGeneric(last10Rounds()); }
 
-function compute70PercentCombo(){
-  const rounds = last10Rounds();
-  if(rounds.length === 0) return null;
+function compute70PercentComboGeneric(rounds){
+  if(!rounds || rounds.length === 0) return null;
+  const winsNeeded = Math.ceil(rounds.length * 0.7);
   const candidates = allNonEmptyRankSubsets()
     .map(ranks=>({ranks, wins: rounds.filter(h=>roundNetForCombo(ranks,h) > 0).length}))
-    .filter(c=>c.wins >= 7);
+    .filter(c=>c.wins >= winsNeeded);
   if(candidates.length === 0) return null;
   candidates.sort((a,b)=>{
     if(b.wins !== a.wins) return b.wins - a.wins;
@@ -565,10 +565,10 @@ function compute70PercentCombo(){
   });
   return candidates[0].ranks;
 }
+function compute70PercentCombo(){ return compute70PercentComboGeneric(last10Rounds()); }
 
-function compute4PickBestHitRate(){
-  const rounds = last10Rounds();
-  if(rounds.length === 0) return null;
+function compute4PickBestHitRateGeneric(rounds){
+  if(!rounds || rounds.length === 0) return null;
   const size4Combos = allNonEmptyRankSubsets().filter(r=>r.length===4); // C(6,4) = 15 combos
   const scored = size4Combos.map(ranks=>{
     let correct=0, totalPicks=0;
@@ -589,6 +589,24 @@ function compute4PickBestHitRate(){
     return 0;
   });
   return scored[0].ranks;
+}
+function compute4PickBestHitRate(){ return compute4PickBestHitRateGeneric(last10Rounds()); }
+
+// "Best combo" info card: checks BCSF/70%/BC4 (and any future strategy added here)
+// against whatever window is currently selected in the Ledger, and reports whichever
+// one actually scores highest — naming which strategy won.
+function computeBestComboOverall(rounds){
+  if(!rounds || rounds.length === 0) return null;
+  const candidates = [];
+  const bcsf = computeBestComboGeneric(rounds);
+  if(bcsf) candidates.push({name:'BCSF', ranks: bcsf, score: scoreRankCombo(bcsf, rounds)});
+  const pct70 = compute70PercentComboGeneric(rounds);
+  if(pct70) candidates.push({name:'70%', ranks: pct70, score: scoreRankCombo(pct70, rounds)});
+  const bc4 = compute4PickBestHitRateGeneric(rounds);
+  if(bc4) candidates.push({name:'BC4', ranks: bc4, score: scoreRankCombo(bc4, rounds)});
+  if(candidates.length === 0) return null;
+  candidates.sort((a,b)=> b.score - a.score);
+  return candidates[0];
 }
 
 function applyAutoSelection(){
@@ -900,12 +918,15 @@ function renderStats(){
   const comboCls = comboPoints>0?'pos':(comboPoints<0?'neg':'');
   html += `<div class="stat-card"><div class="k">Ranks ${comboLabelText()}</div><div class="v ${comboCls}">${comboPoints>0?'+':''}${fmt(comboPoints)}</div></div>`;
 
-  // "Best depth" — whichever of the above scored highest this window, so you don't have to scan every card
-  const allOptions = Object.keys(labels).map(k=>({label: labels[k], v: pointsTotals[k]}));
-  allOptions.push({label: `Ranks ${comboLabelText()}`, v: comboPoints});
-  const best = allOptions.reduce((a,b)=> b.v > a.v ? b : a);
-  const bestCls = best.v>0?'pos':(best.v<0?'neg':'');
-  html += `<div class="stat-card"><div class="k">Best depth this window</div><div class="v ${bestCls}">${best.label}: ${best.v>0?'+':''}${fmt(best.v)}</div></div>`;
+  // "Best combo" — checks BCSF/70%/BC4 against the Ledger's currently-selected window
+  // and reports whichever strategy actually scores highest, naming it.
+  const overallBest = computeBestComboOverall(rounds);
+  if(overallBest){
+    const cls = overallBest.score>0?'pos':(overallBest.score<0?'neg':'');
+    html += `<div class="stat-card"><div class="k">Best combo</div><div class="v ${cls}">${overallBest.name}: Ranks ${overallBest.ranks.join(',')} (${overallBest.score>0?'+':''}${fmt(overallBest.score)})</div></div>`;
+  } else {
+    html += `<div class="stat-card"><div class="k">Best combo</div><div class="v">—</div></div>`;
+  }
 
   grid.innerHTML = html;
   renderBidCards();
