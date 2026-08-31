@@ -180,6 +180,7 @@
 
     <div class="panel">
       <div class="panel-title">Bid ledger</div>
+      <div class="depth-picker" id="bidWindowPicker" style="margin-bottom:10px;"></div>
       <div class="history-scroll" id="bidLedgerScroll">
         <table id="bidLedgerTable">
           <thead><tr><th>#</th><th>Bids</th><th>Result</th><th>Net</th><th>Running total</th></tr></thead>
@@ -191,11 +192,11 @@
     <div class="panel">
       <div class="row center" style="margin-top:0;">
         <button class="ghost" onclick="exportCSV()">Export ledger as CSV</button>
-        <button class="ghost" id="clearRoundsBtn" onclick="askClearRounds()">Clear rounds (keep current picks)</button>
+        <button class="ghost" id="clearRoundsBtn" onclick="askClearRounds()">Clear rounds</button>
         <button class="ghost" id="resetBtn" onclick="askReset()">Reset board</button>
       </div>
       <div class="row center" id="clearRoundsConfirm" style="display:none; margin-top:10px;">
-        <span style="color:var(--loss); font-size:12.5px;">Clear the ledger, accuracy, points and multiplier summary? The current board picks stay as they are.</span>
+        <span style="color:var(--loss); font-size:12.5px;">Clear the ledger, accuracy, points and multiplier summary? The current board picks and your bids/trails stay as they are.</span>
         <button onclick="clearRounds()" style="background:var(--loss); color:#fff;">Yes, clear</button>
         <button class="ghost" onclick="cancelClearRounds()">Cancel</button>
       </div>
@@ -222,15 +223,31 @@ function payoutPoints(x){ return PAYOUT_MAP[x] !== undefined ? PAYOUT_MAP[x] : x
 
 let seedLines = [];
 let roundsLog = []; // raw strings, one per logged round, in order
-let bidsLog = []; // {l,t,f,w,b,p} bid amounts snapshotted at submit time, parallel to roundsLog
+let bidIdLog = []; // parallel to roundsLog: which bidHistory entry (by id) corresponds to that round, for editing
 let currentBids = {l:0,t:0,f:0,w:0,b:0,p:0};
+let bidHistory = []; // independent, persistent betting record — survives "Clear rounds": {id, round, ranking, actual, bids, bidNet}
+let nextBidId = 1;
+let bidStatsWindow = 'all'; // independent window selector for the Bid Ledger
 let baselineFreq = null; // when set (by "Clear rounds"), replay() starts from this instead of seedLines
 let baselineGap = null;
 let selectedRanks = new Set([1]); // 1-indexed rank positions, drives board highlight + custom combo
-let autoMode = false;
+let autoMode = false; // BCSF
+let mode70 = false; // 70%
+let mode4 = false; // BC4
 let editingIndex = null; // index into roundsLog currently being edited
 let deletingIndex = null;
 let state = null;
+
+function computeBidNet(bids, actual){
+  let net = 0;
+  ANIMALS.forEach(a=>{
+    const b = bids[a.code] || 0;
+    if(b <= 0) return;
+    if(actual[a.code] !== undefined){ net += b * (payoutPoints(actual[a.code]) - 1); }
+    else{ net += -b; }
+  });
+  return net;
+}
 
 // ---------- validation ----------
 function validateEntry(raw){
@@ -304,16 +321,7 @@ function replay(){
       points[d] = hitPayout - d; correctCounts[d] = correct;
     }
 
-    const bids = bidsLog[idx] || {l:0,t:0,f:0,w:0,b:0,p:0};
-    let bidNet = 0;
-    ANIMALS.forEach(a=>{
-      const b = bids[a.code] || 0;
-      if(b <= 0) return;
-      if(actual[a.code] !== undefined){ bidNet += b * (payoutPoints(actual[a.code]) - 1); }
-      else{ bidNet += -b; }
-    });
-
-    history.push({round, ranking: rank.slice(), actual: Object.assign({},actual), points, correctCounts, bids: Object.assign({},bids), bidNet});
+    history.push({round, ranking: rank.slice(), actual: Object.assign({},actual), points, correctCounts});
 
     const topCode = rank[0];
     if(actual[topCode] !== undefined){ topMissStreak[topCode]=0; lockedUntil[topCode]=0; }
@@ -371,21 +379,43 @@ function openApp(){
 function buildDepthPicker(){
   const wrap = document.getElementById('depthPicker');
   wrap.innerHTML = '';
-  const autoBtn = document.createElement('button');
-  autoBtn.className = 'chip' + (autoMode ? ' active' : '');
-  autoBtn.textContent = 'Auto';
-  autoBtn.onclick = ()=>{
+  const bcsfBtn = document.createElement('button');
+  bcsfBtn.className = 'chip' + (autoMode ? ' active' : '');
+  bcsfBtn.textContent = 'BCSF';
+  bcsfBtn.onclick = ()=>{
     autoMode = !autoMode;
-    if(autoMode) applyAutoSelection();
+    if(autoMode){ mode70 = false; mode4 = false; applyAutoSelection(); }
     renderAll();
   };
-  wrap.appendChild(autoBtn);
+  wrap.appendChild(bcsfBtn);
+
+  const pct70Btn = document.createElement('button');
+  pct70Btn.className = 'chip' + (mode70 ? ' active' : '');
+  pct70Btn.textContent = '70%';
+  pct70Btn.onclick = ()=>{
+    mode70 = !mode70;
+    if(mode70){ autoMode = false; mode4 = false; applyAutoSelection(); }
+    renderAll();
+  };
+  wrap.appendChild(pct70Btn);
+
+  const bc4Btn = document.createElement('button');
+  bc4Btn.className = 'chip' + (mode4 ? ' active' : '');
+  bc4Btn.textContent = 'BC4';
+  bc4Btn.onclick = ()=>{
+    mode4 = !mode4;
+    if(mode4){ autoMode = false; mode70 = false; applyAutoSelection(); }
+    renderAll();
+  };
+  wrap.appendChild(bc4Btn);
+
+  const locked = autoMode || mode70 || mode4;
   for(let d=1; d<=6; d++){
     const btn = document.createElement('button');
     btn.className = 'chip' + (selectedRanks.has(d) ? ' active' : '');
     btn.textContent = d;
-    btn.disabled = autoMode;
-    btn.onclick = autoMode ? null : ()=>{
+    btn.disabled = locked;
+    btn.onclick = locked ? null : ()=>{
       if(selectedRanks.has(d)) selectedRanks.delete(d); else selectedRanks.add(d);
       if(selectedRanks.size===0) selectedRanks.add(1);
       renderAll();
@@ -417,8 +447,23 @@ function scoreRankCombo(ranks, rounds){
   return total;
 }
 
+function roundNetForCombo(ranks, h){
+  let hitPayout = 0;
+  ranks.forEach(r=>{
+    const code = h.ranking[r-1];
+    if(h.actual[code] !== undefined){ hitPayout += payoutPoints(h.actual[code]); }
+  });
+  return hitPayout - ranks.length;
+}
+
+// BCSF and 70% both always operate on the last 10 rounds, independent of the
+// Ledger's window selector (which only affects Accuracy/Points/Multiplier/Ledger display).
+function last10Rounds(){
+  return state.history.slice(-10);
+}
+
 function computeBestCombo(){
-  const rounds = windowedHistory();
+  const rounds = last10Rounds();
   if(rounds.length === 0) return null;
   const scored = allNonEmptyRankSubsets().map(ranks=>({ranks, score: scoreRankCombo(ranks, rounds)}));
   scored.sort((a,b)=>{
@@ -430,14 +475,64 @@ function computeBestCombo(){
   return scored[0].ranks;
 }
 
+function compute70PercentCombo(){
+  const rounds = last10Rounds();
+  if(rounds.length === 0) return null;
+  const candidates = allNonEmptyRankSubsets()
+    .map(ranks=>({ranks, wins: rounds.filter(h=>roundNetForCombo(ranks,h) > 0).length}))
+    .filter(c=>c.wins >= 7);
+  if(candidates.length === 0) return null;
+  candidates.sort((a,b)=>{
+    if(b.wins !== a.wins) return b.wins - a.wins;
+    const scoreA = scoreRankCombo(a.ranks, rounds), scoreB = scoreRankCombo(b.ranks, rounds);
+    if(scoreB !== scoreA) return scoreB - scoreA;
+    if(b.ranks.length !== a.ranks.length) return b.ranks.length - a.ranks.length;
+    for(let i=0;i<a.ranks.length;i++){ if(a.ranks[i]!==b.ranks[i]) return a.ranks[i]-b.ranks[i]; }
+    return 0;
+  });
+  return candidates[0].ranks;
+}
+
+function compute4PickBestHitRate(){
+  const rounds = last10Rounds();
+  if(rounds.length === 0) return null;
+  const size4Combos = allNonEmptyRankSubsets().filter(r=>r.length===4); // C(6,4) = 15 combos
+  const scored = size4Combos.map(ranks=>{
+    let correct=0, totalPicks=0;
+    rounds.forEach(h=>{
+      ranks.forEach(r=>{
+        totalPicks++;
+        const code = h.ranking[r-1];
+        if(h.actual[code] !== undefined) correct++;
+      });
+    });
+    const rate = totalPicks>0 ? correct/totalPicks : 0;
+    return {ranks, rate, score: scoreRankCombo(ranks, rounds)};
+  });
+  scored.sort((a,b)=>{
+    if(b.rate !== a.rate) return b.rate - a.rate;       // highest hit rate wins
+    if(b.score !== a.score) return b.score - a.score;   // tie-break: higher score
+    for(let i=0;i<a.ranks.length;i++){ if(a.ranks[i]!==b.ranks[i]) return a.ranks[i]-b.ranks[i]; }
+    return 0;
+  });
+  return scored[0].ranks;
+}
+
 function applyAutoSelection(){
-  if(!autoMode) return;
-  const best = computeBestCombo();
-  if(best) selectedRanks = new Set(best);
+  if(autoMode){
+    const best = computeBestCombo();
+    selectedRanks = best ? new Set(best) : new Set();
+  } else if(mode70){
+    const best = compute70PercentCombo();
+    selectedRanks = best ? new Set(best) : new Set(); // no qualifying combo -> nothing highlighted
+  } else if(mode4){
+    const best = compute4PickBestHitRate();
+    selectedRanks = best ? new Set(best) : new Set();
+  }
 }
 
 function comboLabelText(){
-  return Array.from(selectedRanks).sort((a,b)=>a-b).join(', ');
+  return Array.from(selectedRanks).sort((a,b)=>a-b).join(', ') || '—';
 }
 
 function renderBoard(){
@@ -505,12 +600,18 @@ function submitRound(){
   if(!v.ok){ err.textContent = v.error; err.classList.add('show'); return; }
   err.classList.remove('show');
   roundsLog.push(input.value.trim());
-  bidsLog.push(Object.assign({}, currentBids));
   replay();
+  const newEntry = state.history[state.history.length-1];
+  const bidsSnapshot = Object.assign({}, currentBids);
+  const bidNet = computeBidNet(bidsSnapshot, newEntry.actual);
+  const id = nextBidId++;
+  bidHistory.push({id, round: bidHistory.length+1, ranking: newEntry.ranking.slice(), actual: Object.assign({}, newEntry.actual), bids: bidsSnapshot, bidNet});
+  bidIdLog.push(id);
   input.value = '';
   resetBidInputs();
   renderAll();
   scrollLedgerToLatest();
+  scrollBidLedgerToLatest();
   input.focus();
 }
 
@@ -529,7 +630,8 @@ function renderHistory(){
   rounds.forEach((h, i)=>{
     const idx = offset + i; // real index into state.history / roundsLog
     if(editingIndex === idx){
-      const bids = bidsLog[idx] || {l:0,t:0,f:0,w:0,b:0,p:0};
+      const bidEntry = bidHistory.find(b=>b.id === bidIdLog[idx]);
+      const bids = (bidEntry && bidEntry.bids) || {l:0,t:0,f:0,w:0,b:0,p:0};
       const bidInputs = ANIMALS.map(a=>`<span class="edit-bid"><span class="icon">${a.icon}</span><input type="number" min="0" step="any" id="editBid-${a.code}" value="${bids[a.code]||''}" placeholder="0"></span>`).join('');
       rowsHtml.push(`<tr class="edit-row">
         <td>${h.round}</td>
@@ -583,6 +685,9 @@ function renderHistory(){
 function scrollLedgerToLatest(){
   const el = document.getElementById('historyScroll');
   if(el) el.scrollTop = el.scrollHeight;
+}
+
+function scrollBidLedgerToLatest(){
   const bidEl = document.getElementById('bidLedgerScroll');
   if(bidEl) bidEl.scrollTop = bidEl.scrollHeight;
 }
@@ -600,16 +705,25 @@ function saveEdit(idx){
     const val = bidEl ? parseFloat(bidEl.value) : 0;
     newBids[a.code] = (isNaN(val) || val < 0) ? 0 : val;
   });
-  bidsLog[idx] = newBids;
   editingIndex = null;
   replay();
+  const entry = state.history[idx];
+  const bidEntry = bidHistory.find(b=>b.id === bidIdLog[idx]);
+  if(bidEntry && entry){
+    bidEntry.ranking = entry.ranking.slice();
+    bidEntry.actual = Object.assign({}, entry.actual);
+    bidEntry.bids = newBids;
+    bidEntry.bidNet = computeBidNet(newBids, entry.actual);
+  }
   renderAll();
 }
 function startDelete(idx){ deletingIndex = idx; editingIndex = null; renderHistory(); }
 function cancelDelete(){ deletingIndex = null; renderHistory(); }
 function confirmDelete(idx){
+  // Deleting a round from the main Ledger only removes it from the main round-tracking;
+  // the corresponding bid record stays in the independent Bid Ledger.
   roundsLog.splice(idx,1);
-  bidsLog.splice(idx,1);
+  bidIdLog.splice(idx,1);
   deletingIndex = null;
   replay();
   renderAll();
@@ -630,7 +744,7 @@ function buildWindowPicker(){
     const btn = document.createElement('button');
     btn.className = 'chip' + (statsWindow === opt ? ' active' : '');
     btn.textContent = opt==='all' ? 'All' : opt;
-    btn.onclick = ()=>{ statsWindow = opt; applyAutoSelection(); renderBoard(); renderHistory(); renderStats(); renderMultiplierSummary(); renderBidLedger(); buildWindowPicker(); updateWindowHint(); scrollLedgerToLatest(); saveState(); };
+    btn.onclick = ()=>{ statsWindow = opt; renderHistory(); renderStats(); renderMultiplierSummary(); buildWindowPicker(); updateWindowHint(); scrollLedgerToLatest(); saveState(); };
     wrap.appendChild(btn);
   });
 }
@@ -647,12 +761,10 @@ function renderStats(){
   const depthTotals = {1:{c:0,p:0},2:{c:0,p:0},3:{c:0,p:0},4:{c:0,p:0},5:{c:0,p:0},6:{c:0,p:0}};
   const pointsTotals = {1:0,2:0,3:0,4:0,5:0,6:0};
   let comboCorrect=0, comboPicks=0, comboPoints=0;
-  let bidTotal = 0;
   rounds.forEach(h=>{
     for(let d=1; d<=6; d++){ depthTotals[d].c += h.correctCounts[d]; depthTotals[d].p += d; pointsTotals[d]+=h.points[d]; }
     const combo = comboStatsForRound(h);
     comboCorrect += combo.correct; comboPicks += combo.total; comboPoints += combo.pts;
-    bidTotal += h.bidNet || 0;
   });
 
   if(total===0){
@@ -676,9 +788,29 @@ function renderStats(){
   }).join('');
   const comboCls = comboPoints>0?'pos':(comboPoints<0?'neg':'');
   html += `<div class="stat-card"><div class="k">Ranks ${comboLabelText()}</div><div class="v ${comboCls}">${comboPoints>0?'+':''}${fmt(comboPoints)}</div></div>`;
-  const bidCls = bidTotal>0?'pos':(bidTotal<0?'neg':'');
-  html += `<div class="stat-card"><div class="k">Your bids (won/lost)</div><div class="v ${bidCls}">${bidTotal>0?'+':''}${fmt(bidTotal)}</div></div>`;
   grid.innerHTML = html;
+  renderBidCards();
+}
+
+function bidWindowedHistory(){
+  if(bidStatsWindow === 'all') return bidHistory;
+  return bidHistory.slice(-bidStatsWindow);
+}
+
+function renderBidCards(){
+  const grid = document.getElementById('pointsGrid');
+  const rounds = bidWindowedHistory();
+  let bidTotal = 0, totalWagered = 0;
+  rounds.forEach(h=>{
+    bidTotal += h.bidNet || 0;
+    ANIMALS.forEach(a=>{ totalWagered += (h.bids && h.bids[a.code] > 0) ? h.bids[a.code] : 0; });
+  });
+  const bidCls = bidTotal>0?'pos':(bidTotal<0?'neg':'');
+  const trails = totalWagered * 0.025;
+  grid.insertAdjacentHTML('beforeend',
+    `<div class="stat-card"><div class="k">Your bids (won/lost)</div><div class="v ${bidCls}">${bidTotal>0?'+':''}${fmt(bidTotal)}</div></div>
+     <div class="stat-card"><div class="k">Trails</div><div class="v">${fmt(trails)}</div></div>`
+  );
 }
 
 function patternLabel(values){
@@ -709,7 +841,7 @@ function renderMultiplierSummary(){
 }
 
 function renderBidLedger(){
-  const rounds = windowedHistory();
+  const rounds = bidWindowedHistory();
   const body = document.getElementById('bidLedgerBody');
   if(rounds.length===0){
     body.innerHTML = '<tr><td colspan="5" class="empty">No rounds logged yet.</td></tr>';
@@ -735,7 +867,21 @@ function renderBidLedger(){
   body.innerHTML = rowsHtml.join('');
 }
 
-function renderAll(){ applyAutoSelection(); renderBoard(); renderHistory(); buildWindowPicker(); updateWindowHint(); renderStats(); renderMultiplierSummary(); renderBidLedger(); saveState(); }
+function buildBidWindowPicker(){
+  const wrap = document.getElementById('bidWindowPicker');
+  if(!wrap) return;
+  wrap.innerHTML = '';
+  const options = [10,20,30,40,50,60,70,80,90,100,'all'];
+  options.forEach(opt=>{
+    const btn = document.createElement('button');
+    btn.className = 'chip' + (bidStatsWindow === opt ? ' active' : '');
+    btn.textContent = opt==='all' ? 'All' : opt;
+    btn.onclick = ()=>{ bidStatsWindow = opt; renderBidLedger(); renderBidCards(); buildBidWindowPicker(); scrollBidLedgerToLatest(); saveState(); };
+    wrap.appendChild(btn);
+  });
+}
+
+function renderAll(){ applyAutoSelection(); renderBoard(); renderHistory(); buildWindowPicker(); updateWindowHint(); renderStats(); renderMultiplierSummary(); renderBidLedger(); buildBidWindowPicker(); saveState(); }
 
 function exportCSV(){
   if(state.history.length===0) return;
@@ -745,7 +891,7 @@ function exportCSV(){
     const orderStr = h.ranking.map(c=>c.toUpperCase()).join('');
     const actualStr = Object.entries(h.actual).map(([c,val])=>byCode[c].name[0]+val).join(' ');
     const combo = comboStatsForRound(h);
-    csv += [h.round, orderStr, actualStr, fmt(h.points[1]),fmt(h.points[2]),fmt(h.points[3]),fmt(h.points[4]),fmt(h.points[5]),fmt(h.points[6]),fmt(combo.pts),fmt(h.bidNet||0)].join(',')+'\n';
+    csv += [h.round, orderStr, actualStr, fmt(h.points[1]),fmt(h.points[2]),fmt(h.points[3]),fmt(h.points[4]),fmt(h.points[5]),fmt(h.points[6]),fmt(combo.pts)].join(',')+'\n';
   });
   const blob = new Blob([csv], {type:'text/csv'});
   const url = URL.createObjectURL(blob);
@@ -762,8 +908,10 @@ function cancelReset(){
   document.getElementById('resetBtn').style.display = 'inline-block';
 }
 function resetAll(){
-  seedLines = []; roundsLog = []; bidsLog = []; baselineFreq = null; baselineGap = null;
-  selectedRanks = new Set([1]); editingIndex=null; deletingIndex=null; state=null; statsWindow='all';
+  seedLines = []; roundsLog = []; bidIdLog = []; bidHistory = []; nextBidId = 1; bidStatsWindow = 'all';
+  baselineFreq = null; baselineGap = null;
+  selectedRanks = new Set([1]); autoMode = false; mode70 = false; mode4 = false;
+  editingIndex=null; deletingIndex=null; state=null; statsWindow='all';
   resetBidInputs();
   document.getElementById('seedInput').value = '';
   document.getElementById('seedError').classList.remove('show');
@@ -783,10 +931,11 @@ function cancelClearRounds(){
   document.getElementById('clearRoundsBtn').style.display = 'inline-block';
 }
 function clearRounds(){
+  // Intentionally does NOT touch bidHistory/bidIdLog — the Bid Ledger and
+  // Your Bids/Trails totals persist through this action.
   baselineFreq = Object.assign({}, state.freq);
   baselineGap = Object.assign({}, state.gap);
   roundsLog = [];
-  bidsLog = [];
   editingIndex = null; deletingIndex = null;
   replay();
   renderAll();
@@ -813,10 +962,10 @@ async function saveState(){
     const db = await openDB();
     const appOpen = document.getElementById('app').style.display !== 'none';
     const payload = {
-      seedLines, roundsLog, bidsLog,
+      seedLines, roundsLog, bidIdLog, bidHistory, nextBidId, bidStatsWindow,
       baselineFreq, baselineGap,
       selectedRanks: Array.from(selectedRanks),
-      statsWindow, appOpen, autoMode
+      statsWindow, appOpen, autoMode, mode70, mode4
     };
     await new Promise((resolve, reject)=>{
       const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -849,12 +998,17 @@ async function restoreFromSave(){
   if(!saved) return;
   seedLines = saved.seedLines || [];
   roundsLog = saved.roundsLog || [];
-  bidsLog = saved.bidsLog || [];
+  bidIdLog = saved.bidIdLog || [];
+  bidHistory = saved.bidHistory || [];
+  nextBidId = saved.nextBidId || 1;
+  bidStatsWindow = saved.bidStatsWindow || 'all';
   baselineFreq = saved.baselineFreq || null;
   baselineGap = saved.baselineGap || null;
   selectedRanks = new Set(saved.selectedRanks && saved.selectedRanks.length ? saved.selectedRanks : [1]);
   statsWindow = saved.statsWindow || 'all';
   autoMode = !!saved.autoMode;
+  mode70 = !!saved.mode70;
+  mode4 = !!saved.mode4;
   replay();
   if(saved.appOpen){
     document.getElementById('landing').style.display = 'none';
@@ -862,6 +1016,7 @@ async function restoreFromSave(){
     buildBidRow();
     renderAll();
     scrollLedgerToLatest();
+    scrollBidLedgerToLatest();
   } else if(seedLines.length || roundsLog.length){
     // had a seed typed but hadn't opened the board yet — restore the textarea text
     document.getElementById('seedInput').value = seedLines.join('\n');
