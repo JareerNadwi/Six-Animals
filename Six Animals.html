@@ -82,12 +82,10 @@
   .history-scroll{ max-height: 397px; overflow-y:auto; border: 1px solid var(--panel-line); border-radius: 3px; }
   .history-scroll table{ font-size:11.5px; } .history-scroll thead th{ position: sticky; top:0; background: var(--panel); }
   .stat-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 10px; margin-top: 8px; }
-  .stat-card{ background: var(--flip-bg); border:1px solid var(--panel-line); border-radius:4px; padding: 12px; }
+  .stat-card{ background: var(--flip-bg); border:1px solid var(--panel-line); border-radius:4px; padding: 12px; min-height:76px; box-sizing:border-box; display:flex; flex-direction:column; justify-content:center; min-width:0; }
   .stat-card .k{ font-family: var(--display); text-transform:uppercase; font-size: 10.5px; color: var(--cream-dim); letter-spacing:0.06em; }
   .stat-card .v{ font-size: 20px; margin-top: 4px; font-weight:700; }
   .stat-card .v.pos{ color: var(--win); } .stat-card .v.neg{ color: var(--loss); }
-  .bid-cards-row{ display:flex; justify-content:center; align-items:stretch; gap:10px; margin-top:10px; flex-wrap:wrap; }
-  .bid-cards-row .stat-card{ width:220px; flex: 0 0 220px; min-height:76px; display:flex; flex-direction:column; justify-content:center; text-align:center; }
   .combo-label{ font-size: 12px; color: var(--cream-dim); }
   .combo-label b{ color: var(--brass); }
   footer{ text-align:center; color: var(--cream-dim); font-size: 11px; margin-top: 30px; }
@@ -101,9 +99,9 @@
   .edit-bid input:focus{ outline:none; }
   .round-row{ display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px; margin-top:12px; align-items:stretch; }
   @media (max-width:480px){ .round-row{ grid-template-columns: 1fr; } }
-  .round-input-group{ display:flex; gap:10px; flex-wrap:wrap; height:100%; }
-  .round-input-group input, #startingBalanceInput{ flex:1; min-width:140px; background: var(--flip-bg); color: var(--cream); border:1px solid var(--panel-line); border-radius:4px; padding:8px 10px; font-family:var(--mono); font-size:14px; height:40px; box-sizing:border-box; }
-  .mini-box{ background: var(--flip-bg); border:1px solid var(--panel-line); border-radius:4px; padding:8px 10px; display:flex; align-items:center; gap:6px; height:40px; box-sizing:border-box; }
+  .round-input-group{ display:flex; gap:10px; flex-wrap:wrap; height:100%; min-width:0; }
+  .round-input-group input, #startingBalanceInput{ flex:1; min-width:0; background: var(--flip-bg); color: var(--cream); border:1px solid var(--panel-line); border-radius:4px; padding:8px 10px; font-family:var(--mono); font-size:14px; height:40px; box-sizing:border-box; }
+  .mini-box{ background: var(--flip-bg); border:1px solid var(--panel-line); border-radius:4px; padding:8px 10px; display:flex; align-items:center; gap:6px; height:40px; box-sizing:border-box; min-width:0; }
   .mini-k{ font-family: var(--display); text-transform:uppercase; font-size:10px; color:var(--cream-dim); letter-spacing:0.06em; white-space:nowrap; }
   .mini-v{ font-size:15px; font-weight:700; color: var(--cream); text-align:right; flex:1; }
   .mini-box input{ background:transparent; border:none; color:var(--cream); font-family:var(--mono); font-size:15px; padding:0; width:100%; text-align:right; flex:1; }
@@ -116,7 +114,7 @@
   .bid-row{ display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-top:10px; }
   @media (max-width: 480px){ .bid-row{ grid-template-columns: 1fr; } }
   .bid-box{ display:flex; align-items:center; gap:6px; background: var(--flip-bg); border:1px solid var(--panel-line);
-    border-radius:4px; padding:8px 10px; width:100%; height:40px; box-sizing:border-box; }
+    border-radius:4px; padding:8px 10px; width:100%; min-width:0; height:40px; box-sizing:border-box; }
   .bid-box .icon{ font-size:18px; }
   .bid-box input{ width:100%; min-width:0; background:transparent; border:none; color:var(--cream); font-family: var(--mono); font-size:14px; padding:0; }
   .bid-box input:focus{ outline:none; }
@@ -211,7 +209,6 @@
     <div class="panel">
       <div class="panel-title">Points by depth</div>
       <div class="stat-grid" id="pointsGrid"></div>
-      <div class="bid-cards-row" id="bidCardsRow"></div>
     </div>
 
     <div class="panel">
@@ -1131,6 +1128,11 @@ function renderStats(){
   } else {
     html += `<div class="stat-card"><div class="k">Best combo</div><div class="v">—</div></div>`;
   }
+  // Placeholder that renderBidCards() fills — display:contents makes its children act
+  // as direct grid items of #pointsGrid, so they share the exact same column tracks
+  // (and therefore the exact same width) as the cards above, instead of living in a
+  // separate flex row that could size differently.
+  html += `<div id="bidCardsRow" style="display:contents"></div>`;
 
   grid.innerHTML = html;
   renderBidCards();
