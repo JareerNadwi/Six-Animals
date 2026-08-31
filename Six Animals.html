@@ -675,15 +675,15 @@ function computeNPickBestHitRateGeneric(rounds, size){
   return scored[0].ranks;
 }
 
-// N-pick best-hit-rate, but restricted to combos that actually WON (net > 0) on more
-// than 7 of the last 10 rounds. Among those qualifying combos, the usual hit-rate/score
+// N-pick best-hit-rate, but restricted to combos that actually WON (net > 0) on 7 or
+// more of the last 10 rounds. Among those qualifying combos, the usual hit-rate/score
 // ranking picks the winner. Returns null when nothing qualifies (nothing highlighted).
 function computeNPick70Generic(rounds, size){
   if(!rounds || rounds.length === 0) return null;
   const sizeCombos = allNonEmptyRankSubsets().filter(r=>r.length===size);
   const qualifying = sizeCombos.filter(ranks=>{
     const wins = rounds.filter(h=>roundNetForCombo(ranks,h) > 0).length;
-    return wins > 7;
+    return wins >= 7;
   });
   if(qualifying.length === 0) return null;
   const scored = qualifying.map(ranks=>{
