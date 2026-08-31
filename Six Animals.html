@@ -218,8 +218,8 @@
       <div class="depth-picker" id="bidWindowPicker" style="margin-bottom:10px;"></div>
       <div class="history-scroll" id="bidLedgerScroll">
         <table id="bidLedgerTable">
-          <thead><tr><th>#</th><th>Bids</th><th>Result</th><th>Net</th><th>Running total</th></tr></thead>
-          <tbody id="bidLedgerBody"><tr><td colspan="5" class="empty">No rounds logged yet.</td></tr></tbody>
+          <thead><tr><th>#</th><th>Bids</th><th>Result</th><th>Net</th><th>Running total</th><th>Balance</th></tr></thead>
+          <tbody id="bidLedgerBody"><tr><td colspan="6" class="empty">No rounds logged yet.</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -700,14 +700,15 @@ function onQuickBidInput(){
   });
 }
 
-function resetBidInputs(){
+function resetBidInputs(keepQuickBid){
   currentBids = {l:0,t:0,f:0,w:0,b:0,p:0};
   ANIMALS.forEach(a=>{
     const el = document.getElementById('bid-'+a.code);
     if(el){ el.value = ''; el.readOnly = false; }
   });
   const quickEl = document.getElementById('quickBidAmount');
-  if(quickEl) quickEl.value = '';
+  if(quickEl && !keepQuickBid) quickEl.value = '';
+  if(keepQuickBid) onQuickBidInput();
 }
 
 function computeBalance(){
@@ -736,7 +737,7 @@ function submitRound(){
   bidHistory.push({id, round: bidHistory.length+1, ranking: newEntry.ranking.slice(), actual: Object.assign({}, newEntry.actual), bids: bidsSnapshot, bidNet});
   bidIdLog.push(id);
   input.value = '';
-  resetBidInputs();
+  resetBidInputs(true);
   renderAll();
   scrollLedgerToLatest();
   scrollBidLedgerToLatest();
@@ -923,7 +924,7 @@ function renderStats(){
   const overallBest = computeBestComboOverall(rounds);
   if(overallBest){
     const cls = overallBest.score>0?'pos':(overallBest.score<0?'neg':'');
-    html += `<div class="stat-card"><div class="k">Best combo</div><div class="v ${cls}">${overallBest.name}: Ranks ${overallBest.ranks.join(',')} (${overallBest.score>0?'+':''}${fmt(overallBest.score)})</div></div>`;
+    html += `<div class="stat-card"><div class="k">Best combo</div><div class="v ${cls}">${overallBest.name} ${overallBest.score>0?'+':''}${fmt(overallBest.score)}</div></div>`;
   } else {
     html += `<div class="stat-card"><div class="k">Best combo</div><div class="v">—</div></div>`;
   }
@@ -983,9 +984,15 @@ function renderBidLedger(){
   const rounds = bidWindowedHistory().filter(h => ANIMALS.some(a => h.bids && h.bids[a.code] > 0));
   const body = document.getElementById('bidLedgerBody');
   if(rounds.length===0){
-    body.innerHTML = '<tr><td colspan="5" class="empty">No bids placed yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" class="empty">No bids placed yet.</td></tr>';
     return;
   }
+  // Balance-after-round, computed from the full (unwindowed) bid history so it always
+  // matches the live Balance display regardless of which window is selected.
+  let cumulative = startingBalance;
+  const balanceAtRound = {};
+  bidHistory.forEach(h=>{ cumulative += (h.bidNet || 0); balanceAtRound[h.round] = cumulative; });
+
   let running = 0;
   const rowsHtml = rounds.map(h=>{
     const hadAnyBid = ANIMALS.some(a=>(h.bids && h.bids[a.code] > 0));
@@ -1001,7 +1008,8 @@ function renderBidLedger(){
     const actualStr = resultParts.join(' ');
     const net = h.bidNet || 0;
     running += net;
-    return `<tr><td>${h.round}</td><td>${bidStr}</td><td>${actualStr}</td><td class="${ptsClass(net)}">${fmt(net)}</td><td class="${ptsClass(running)}">${fmt(running)}</td></tr>`;
+    const bal = balanceAtRound[h.round];
+    return `<tr><td>${h.round}</td><td>${bidStr}</td><td>${actualStr}</td><td class="${ptsClass(net)}">${fmt(net)}</td><td class="${ptsClass(running)}">${fmt(running)}</td><td class="${ptsClass(bal-startingBalance)}">${fmt(bal)}</td></tr>`;
   });
   body.innerHTML = rowsHtml.join('');
 }
