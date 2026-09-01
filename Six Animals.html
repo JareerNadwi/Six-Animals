@@ -55,6 +55,13 @@
   .error{ color: var(--loss); font-size: 12.5px; margin-top: 8px; display:none; }
   .error.show{ display:block; }
   .depth-picker{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 14px; justify-content:center; }
+  .mode-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:center; width:100%; margin-bottom:4px; }
+  .mode-toggle{ display:flex; align-items:center; gap:6px; font-family:var(--display); text-transform:uppercase;
+    letter-spacing:0.08em; font-size:12px; color: var(--win); font-weight:700; cursor:pointer; }
+  .mode-toggle input{ accent-color: var(--win); width:15px; height:15px; cursor:pointer; }
+  select.mode-select{ background: var(--flip-bg); color: var(--cream); border:1px solid var(--panel-line);
+    border-radius:3px; padding:7px 8px; font-family: var(--mono); font-size:12.5px; }
+  select.mode-select:disabled{ opacity:0.35; cursor:not-allowed; }
   .board{ display:grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
   @media (max-width: 720px){ .board{ grid-template-columns: repeat(3, 1fr); } }
   .runner{ background: var(--flip-bg); border: 1px solid var(--panel-line); border-radius: 4px; padding: 6px 4px; text-align:center;
@@ -203,7 +210,7 @@
     <div class="panel">
       <div class="panel-title">Multiplier summary</div>
       <table id="multiplierTable">
-        <thead><tr><th>Pattern</th><th>Rounds</th></tr></thead>
+        <thead><tr><th>Pattern</th><th>Rounds</th><th>%</th></tr></thead>
         <tbody id="multiplierBody"></tbody>
       </table>
     </div>
@@ -279,12 +286,10 @@ let startingBalance = 0;
 let baselineFreq = null; // when set (by "Clear rounds"), replay() starts from this instead of seedLines
 let baselineGap = null;
 let selectedRanks = new Set([1]); // 1-indexed rank positions, drives board highlight + custom combo
-let autoMode = false; // BCSF
-let mode70 = false; // BCSF70%
-let mode4 = false; // BC4
-let mode4_70 = false; // BC470%
-let mode5 = false; // BC5
-let mode5_70 = false; // BC570%
+let filterAuto = false; // whether the Combinations/Hit rate/Score selector is driving the board selection
+let filterSize = 'any'; // 'any' or '1'..'6' — how many ranks the auto combo must use
+let filterHitRate = 'any'; // 'any' or '10'..'100' — min % of last 10 rounds the combo must have won
+let filterScore = 'any'; // 'any' or '1'..'10' — min total score over the last 10 rounds
 let editingIndex = null; // index into roundsLog currently being edited
 let deletingIndex = null;
 let state = null;
@@ -467,79 +472,58 @@ function updateTimerDisplay(){
 function buildDepthPicker(){
   const wrap = document.getElementById('depthPicker');
   wrap.innerHTML = '';
-  // Turns off every strategy mode except the one being switched on.
-  function exclusiveModeOn(which){
-    autoMode = which==='auto'; mode70 = which==='70'; mode4 = which==='bc4';
-    mode4_70 = which==='bc4_70'; mode5 = which==='bc5'; mode5_70 = which==='bc5_70';
+
+  const modeRow = document.createElement('div');
+  modeRow.className = 'mode-row';
+
+  const toggleLabel = document.createElement('label');
+  toggleLabel.className = 'mode-toggle';
+  const toggleChk = document.createElement('input');
+  toggleChk.type = 'checkbox';
+  toggleChk.checked = filterAuto;
+  toggleChk.onchange = ()=>{
+    filterAuto = toggleChk.checked;
+    applyAutoSelection();
+    renderAll();
+  };
+  toggleLabel.appendChild(toggleChk);
+  toggleLabel.appendChild(document.createTextNode('Auto'));
+  modeRow.appendChild(toggleLabel);
+
+  function makeSelect(options, current, onSet){
+    const sel = document.createElement('select');
+    sel.className = 'mode-select';
+    sel.disabled = !filterAuto;
+    options.forEach(opt=>{
+      const o = document.createElement('option');
+      o.value = opt.value; o.textContent = opt.label;
+      if(current === opt.value) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.onchange = ()=>{
+      onSet(sel.value);
+      applyAutoSelection();
+      renderAll();
+    };
+    modeRow.appendChild(sel);
+    return sel;
   }
 
-  const bcsfBtn = document.createElement('button');
-  bcsfBtn.className = 'chip mode' + (autoMode ? ' active' : '');
-  bcsfBtn.textContent = 'BCSF';
-  bcsfBtn.onclick = ()=>{
-    const next = !autoMode;
-    exclusiveModeOn(next ? 'auto' : null);
-    if(next) applyAutoSelection();
-    renderAll();
-  };
-  wrap.appendChild(bcsfBtn);
+  const sizeOptions = [{value:'any', label:'Combinations: Any'}];
+  for(let n=1;n<=6;n++) sizeOptions.push({value:String(n), label:'Combinations: '+n});
+  makeSelect(sizeOptions, filterSize, v=>{ filterSize = v; });
 
-  const pct70Btn = document.createElement('button');
-  pct70Btn.className = 'chip mode' + (mode70 ? ' active' : '');
-  pct70Btn.textContent = 'BCSF70%';
-  pct70Btn.onclick = ()=>{
-    const next = !mode70;
-    exclusiveModeOn(next ? '70' : null);
-    if(next) applyAutoSelection();
-    renderAll();
-  };
-  wrap.appendChild(pct70Btn);
+  const rateOptions = [{value:'any', label:'Hit rate: Any'}];
+  for(let p=10;p<=100;p+=10) rateOptions.push({value:String(p), label:'Hit rate: '+p+'%'});
+  makeSelect(rateOptions, filterHitRate, v=>{ filterHitRate = v; });
 
-  const bc4Btn = document.createElement('button');
-  bc4Btn.className = 'chip mode' + (mode4 ? ' active' : '');
-  bc4Btn.textContent = 'BC4';
-  bc4Btn.onclick = ()=>{
-    const next = !mode4;
-    exclusiveModeOn(next ? 'bc4' : null);
-    if(next) applyAutoSelection();
-    renderAll();
-  };
-  wrap.appendChild(bc4Btn);
+  const scoreOptions = [{value:'any', label:'Score: Any'}];
+  for(let s=1;s<=10;s++) scoreOptions.push({value:String(s), label:'Score: +'+s});
+  makeSelect(scoreOptions, filterScore, v=>{ filterScore = v; });
 
-  const bc470Btn = document.createElement('button');
-  bc470Btn.className = 'chip mode' + (mode4_70 ? ' active' : '');
-  bc470Btn.textContent = 'BC470%';
-  bc470Btn.onclick = ()=>{
-    const next = !mode4_70;
-    exclusiveModeOn(next ? 'bc4_70' : null);
-    if(next) applyAutoSelection();
-    renderAll();
-  };
-  wrap.appendChild(bc470Btn);
+  wrap.appendChild(modeRow);
 
-  const bc5Btn = document.createElement('button');
-  bc5Btn.className = 'chip mode' + (mode5 ? ' active' : '');
-  bc5Btn.textContent = 'BC5';
-  bc5Btn.onclick = ()=>{
-    const next = !mode5;
-    exclusiveModeOn(next ? 'bc5' : null);
-    if(next) applyAutoSelection();
-    renderAll();
-  };
-  wrap.appendChild(bc5Btn);
-
-  const bc570Btn = document.createElement('button');
-  bc570Btn.className = 'chip mode' + (mode5_70 ? ' active' : '');
-  bc570Btn.textContent = 'BC570%';
-  bc570Btn.onclick = ()=>{
-    const next = !mode5_70;
-    exclusiveModeOn(next ? 'bc5_70' : null);
-    if(next) applyAutoSelection();
-    renderAll();
-  };
-  wrap.appendChild(bc570Btn);
-
-  const locked = autoMode || mode70 || mode4 || mode4_70 || mode5 || mode5_70;
+  const locked = filterAuto;
   for(let d=1; d<=6; d++){
     const btn = document.createElement('button');
     btn.className = 'chip' + (selectedRanks.has(d) ? ' active' : '');
@@ -603,162 +587,56 @@ function computeBestComboGeneric(rounds){
   });
   return scored[0].ranks;
 }
-function computeBestCombo(){ return computeBestComboGeneric(last10Rounds()); }
 
-function compute70PercentComboGeneric(rounds){
-  if(!rounds || rounds.length === 0) return null;
-  const winsNeeded = Math.ceil(rounds.length * 0.7);
-  const candidates = allNonEmptyRankSubsets()
-    .map(ranks=>({ranks, wins: rounds.filter(h=>roundNetForCombo(ranks,h) > 0).length}))
-    .filter(c=>c.wins >= winsNeeded);
-  if(candidates.length === 0) return null;
-  candidates.sort((a,b)=>{
-    if(b.wins !== a.wins) return b.wins - a.wins;
-    const scoreA = scoreRankCombo(a.ranks, rounds), scoreB = scoreRankCombo(b.ranks, rounds);
-    if(scoreB !== scoreA) return scoreB - scoreA;
-    if(b.ranks.length !== a.ranks.length) return b.ranks.length - a.ranks.length;
-    for(let i=0;i<a.ranks.length;i++){ if(a.ranks[i]!==b.ranks[i]) return a.ranks[i]-b.ranks[i]; }
-    return 0;
-  });
-  return candidates[0].ranks;
-}
-function compute70PercentCombo(){ return compute70PercentComboGeneric(last10Rounds()); }
-
-function compute4PickBestHitRateGeneric(rounds){
-  if(!rounds || rounds.length === 0) return null;
-  const size4Combos = allNonEmptyRankSubsets().filter(r=>r.length===4); // C(6,4) = 15 combos
-  const scored = size4Combos.map(ranks=>{
-    let correct=0, totalPicks=0;
-    rounds.forEach(h=>{
-      ranks.forEach(r=>{
-        totalPicks++;
-        const code = h.ranking[r-1];
-        if(h.actual[code] !== undefined) correct++;
-      });
-    });
-    const rate = totalPicks>0 ? correct/totalPicks : 0;
-    return {ranks, rate, score: scoreRankCombo(ranks, rounds)};
-  });
-  scored.sort((a,b)=>{
-    if(b.rate !== a.rate) return b.rate - a.rate;       // highest hit rate wins
-    if(b.score !== a.score) return b.score - a.score;   // tie-break: higher score
-    for(let i=0;i<a.ranks.length;i++){ if(a.ranks[i]!==b.ranks[i]) return a.ranks[i]-b.ranks[i]; }
-    return 0;
-  });
-  return scored[0].ranks;
-}
-function compute4PickBestHitRate(){ return compute4PickBestHitRateGeneric(last10Rounds()); }
-
-// Generic N-pick best-hit-rate finder, parameterized by combo size (used for BC4 and BC5).
-function computeNPickBestHitRateGeneric(rounds, size){
-  if(!rounds || rounds.length === 0) return null;
-  const sizeCombos = allNonEmptyRankSubsets().filter(r=>r.length===size);
-  const scored = sizeCombos.map(ranks=>{
-    let correct=0, totalPicks=0;
-    rounds.forEach(h=>{
-      ranks.forEach(r=>{
-        totalPicks++;
-        const code = h.ranking[r-1];
-        if(h.actual[code] !== undefined) correct++;
-      });
-    });
-    const rate = totalPicks>0 ? correct/totalPicks : 0;
-    return {ranks, rate, score: scoreRankCombo(ranks, rounds)};
-  });
-  if(scored.length === 0) return null;
-  scored.sort((a,b)=>{
-    if(b.rate !== a.rate) return b.rate - a.rate;       // highest hit rate wins
-    if(b.score !== a.score) return b.score - a.score;   // tie-break: higher score
-    for(let i=0;i<a.ranks.length;i++){ if(a.ranks[i]!==b.ranks[i]) return a.ranks[i]-b.ranks[i]; }
-    return 0;
-  });
-  return scored[0].ranks;
-}
-
-// N-pick best-hit-rate, but restricted to combos that actually WON (net > 0) on 7 or
-// more of the last 10 rounds. Among those qualifying combos, the usual hit-rate/score
-// ranking picks the winner. Returns null when nothing qualifies (nothing highlighted).
-function computeNPick70Generic(rounds, size){
-  if(!rounds || rounds.length === 0) return null;
-  const sizeCombos = allNonEmptyRankSubsets().filter(r=>r.length===size);
-  const qualifying = sizeCombos.filter(ranks=>{
-    const wins = rounds.filter(h=>roundNetForCombo(ranks,h) > 0).length;
-    return wins >= 7;
-  });
-  if(qualifying.length === 0) return null;
-  const scored = qualifying.map(ranks=>{
-    let correct=0, totalPicks=0;
-    rounds.forEach(h=>{
-      ranks.forEach(r=>{
-        totalPicks++;
-        const code = h.ranking[r-1];
-        if(h.actual[code] !== undefined) correct++;
-      });
-    });
-    const rate = totalPicks>0 ? correct/totalPicks : 0;
-    return {ranks, rate, score: scoreRankCombo(ranks, rounds)};
-  });
-  scored.sort((a,b)=>{
-    if(b.rate !== a.rate) return b.rate - a.rate;
-    if(b.score !== a.score) return b.score - a.score;
-    for(let i=0;i<a.ranks.length;i++){ if(a.ranks[i]!==b.ranks[i]) return a.ranks[i]-b.ranks[i]; }
-    return 0;
-  });
-  return scored[0].ranks;
-}
-
-function compute5PickBestHitRateGeneric(rounds){ return computeNPickBestHitRateGeneric(rounds, 5); }
-function compute5PickBestHitRate(){ return compute5PickBestHitRateGeneric(last10Rounds()); }
-
-function compute4Pick70ComboGeneric(rounds){ return computeNPick70Generic(rounds, 4); }
-function compute4Pick70Combo(){ return compute4Pick70ComboGeneric(last10Rounds()); }
-
-function compute5Pick70ComboGeneric(rounds){ return computeNPick70Generic(rounds, 5); }
-function compute5Pick70Combo(){ return compute5Pick70ComboGeneric(last10Rounds()); }
-
-// "Best combo" info card: checks BCSF/70%/BC4 (and any future strategy added here)
-// against whatever window is currently selected in the Ledger, and reports whichever
-// one actually scores highest — naming which strategy won.
+// "Best combo" info card: the single highest-score combo with no restrictions at all
+// (any size, no hit-rate or score floor) — the unrestricted ceiling, for comparison
+// against whatever the "Ranks X" card above shows for your current Auto filters.
 function computeBestComboOverall(rounds){
   if(!rounds || rounds.length === 0) return null;
-  const candidates = [];
-  const bcsf = computeBestComboGeneric(rounds);
-  if(bcsf) candidates.push({name:'BCSF', ranks: bcsf, score: scoreRankCombo(bcsf, rounds)});
-  const pct70 = compute70PercentComboGeneric(rounds);
-  if(pct70) candidates.push({name:'BCSF70%', ranks: pct70, score: scoreRankCombo(pct70, rounds)});
-  const bc4 = compute4PickBestHitRateGeneric(rounds);
-  if(bc4) candidates.push({name:'BC4', ranks: bc4, score: scoreRankCombo(bc4, rounds)});
-  const bc470 = compute4Pick70ComboGeneric(rounds);
-  if(bc470) candidates.push({name:'BC470%', ranks: bc470, score: scoreRankCombo(bc470, rounds)});
-  const bc5 = compute5PickBestHitRateGeneric(rounds);
-  if(bc5) candidates.push({name:'BC5', ranks: bc5, score: scoreRankCombo(bc5, rounds)});
-  const bc570 = compute5Pick70ComboGeneric(rounds);
-  if(bc570) candidates.push({name:'BC570%', ranks: bc570, score: scoreRankCombo(bc570, rounds)});
-  if(candidates.length === 0) return null;
-  candidates.sort((a,b)=> b.score - a.score);
-  return candidates[0];
+  const ranks = computeBestComboGeneric(rounds);
+  if(!ranks) return null;
+  return {ranks, score: scoreRankCombo(ranks, rounds)};
 }
 
 function applyAutoSelection(){
-  if(autoMode){
-    const best = computeBestCombo();
-    selectedRanks = best ? new Set(best) : new Set();
-  } else if(mode70){
-    const best = compute70PercentCombo();
-    selectedRanks = best ? new Set(best) : new Set(); // no qualifying combo -> nothing highlighted
-  } else if(mode4){
-    const best = compute4PickBestHitRate();
-    selectedRanks = best ? new Set(best) : new Set();
-  } else if(mode4_70){
-    const best = compute4Pick70Combo();
-    selectedRanks = best ? new Set(best) : new Set(); // no qualifying combo -> nothing highlighted
-  } else if(mode5){
-    const best = compute5PickBestHitRate();
-    selectedRanks = best ? new Set(best) : new Set();
-  } else if(mode5_70){
-    const best = compute5Pick70Combo();
+  if(filterAuto){
+    const best = computeFilteredCombo(last10Rounds(), filterSize, filterHitRate, filterScore);
     selectedRanks = best ? new Set(best) : new Set(); // no qualifying combo -> nothing highlighted
   }
+}
+
+// Single generalized combo finder driving the Combinations/Hit rate/Score selector.
+// size: 'any' or '1'..'6' — restricts how many ranks the combo may use.
+// hitRatePct: 'any' or '10'..'100' — min % of rounds the combo must have won (net > 0).
+// minScore: 'any' or '1'..'10' — min total score (scoreRankCombo) over the given rounds.
+// Among everything that passes both filters, picks the highest score, tying on win rate,
+// then smaller combo size, then lowest ranks for determinism.
+function computeFilteredCombo(rounds, size, hitRatePct, minScore){
+  if(!rounds || rounds.length === 0) return null;
+  let combos = allNonEmptyRankSubsets();
+  if(size !== 'any'){ const n = parseInt(size,10); combos = combos.filter(r=>r.length===n); }
+  let scored = combos.map(ranks=>{
+    const wins = rounds.filter(h=>roundNetForCombo(ranks,h) > 0).length;
+    const rate = rounds.length>0 ? wins/rounds.length : 0;
+    return {ranks, wins, rate, score: scoreRankCombo(ranks, rounds)};
+  });
+  if(hitRatePct !== 'any'){
+    const winsNeeded = Math.ceil(rounds.length * parseInt(hitRatePct,10) / 100);
+    scored = scored.filter(c=>c.wins >= winsNeeded);
+  }
+  if(minScore !== 'any'){
+    const min = parseInt(minScore,10);
+    scored = scored.filter(c=>c.score >= min);
+  }
+  if(scored.length === 0) return null;
+  scored.sort((a,b)=>{
+    if(b.score !== a.score) return b.score - a.score;
+    if(b.rate !== a.rate) return b.rate - a.rate;
+    if(a.ranks.length !== b.ranks.length) return a.ranks.length - b.ranks.length;
+    for(let i=0;i<a.ranks.length;i++){ if(a.ranks[i]!==b.ranks[i]) return a.ranks[i]-b.ranks[i]; }
+    return 0;
+  });
+  return scored[0].ranks;
 }
 
 function comboLabelText(){
@@ -1122,12 +1000,13 @@ function renderStats(){
   const comboCls = comboPoints>0?'pos':(comboPoints<0?'neg':'');
   html += `<div class="stat-card"><div class="k">Ranks ${comboLabelText()}</div><div class="v ${comboCls}">${comboPoints>0?'+':''}${fmtDisplay(comboPoints)}</div></div>`;
 
-  // "Best combo" — checks BCSF/70%/BC4 against the Ledger's currently-selected window
-  // and reports whichever strategy actually scores highest, naming it.
+  // "Best combo" — the unrestricted best-score combo (any size, no filters), shown as
+  // a ceiling to compare against whatever "Ranks X" above is currently producing.
   const overallBest = computeBestComboOverall(rounds);
   if(overallBest){
     const cls = overallBest.score>0?'pos':(overallBest.score<0?'neg':'');
-    html += `<div class="stat-card"><div class="k">Best combo</div><div class="v ${cls}">${overallBest.name} ${overallBest.score>0?'+':''}${fmtDisplay(overallBest.score)}</div></div>`;
+    const label = overallBest.ranks.slice().sort((a,b)=>a-b).join(', ');
+    html += `<div class="stat-card"><div class="k">Best combo (${label})</div><div class="v ${cls}">${overallBest.score>0?'+':''}${fmtDisplay(overallBest.score)}</div></div>`;
   } else {
     html += `<div class="stat-card"><div class="k">Best combo</div><div class="v">—</div></div>`;
   }
@@ -1189,6 +1068,7 @@ const FIXED_PATTERNS = [
 
 function renderMultiplierSummary(){
   const rounds = windowedHistory();
+  const total = rounds.length;
   const patternCounts = {};
   rounds.forEach(h=>{
     const values = Object.values(h.actual);
@@ -1196,7 +1076,11 @@ function renderMultiplierSummary(){
     patternCounts[label] = (patternCounts[label]||0)+1;
   });
   const body = document.getElementById('multiplierBody');
-  body.innerHTML = FIXED_PATTERNS.map(l=>`<tr><td>${l}</td><td>${patternCounts[l]||0}</td></tr>`).join('');
+  body.innerHTML = FIXED_PATTERNS.map(l=>{
+    const count = patternCounts[l]||0;
+    const pct = total>0 ? (count/total*100) : 0;
+    return `<tr><td>${l}</td><td>${count}</td><td>${pct.toFixed(1)}%</td></tr>`;
+  }).join('');
 }
 
 function renderBidLedger(){
@@ -1277,7 +1161,7 @@ function resetAll(){
   clearInterval(roundTimerInterval);
   seedLines = []; roundsLog = []; bidIdLog = []; bidHistory = []; nextBidId = 1; bidStatsWindow = 'all';
   baselineFreq = null; baselineGap = null; startingBalance = 0;
-  selectedRanks = new Set([1]); autoMode = false; mode70 = false; mode4 = false; mode4_70 = false; mode5 = false; mode5_70 = false;
+  selectedRanks = new Set([1]); filterAuto = false; filterSize = 'any'; filterHitRate = 'any'; filterScore = 'any';
   editingIndex=null; deletingIndex=null; state=null; statsWindow='all';
   resetBidInputs();
   document.getElementById('seedInput').value = '';
@@ -1354,7 +1238,7 @@ async function saveState(){
       seedLines, roundsLog, bidIdLog, bidHistory, nextBidId, bidStatsWindow,
       baselineFreq, baselineGap,
       selectedRanks: Array.from(selectedRanks),
-      statsWindow, appOpen, autoMode, mode70, mode4, mode4_70, mode5, mode5_70, startingBalance
+      statsWindow, appOpen, filterAuto, filterSize, filterHitRate, filterScore, startingBalance
     };
     await new Promise((resolve, reject)=>{
       const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -1396,12 +1280,10 @@ async function restoreFromSave(){
   baselineGap = saved.baselineGap || null;
   selectedRanks = new Set(saved.selectedRanks && saved.selectedRanks.length ? saved.selectedRanks : [1]);
   statsWindow = saved.statsWindow || 'all';
-  autoMode = !!saved.autoMode;
-  mode70 = !!saved.mode70;
-  mode4 = !!saved.mode4;
-  mode4_70 = !!saved.mode4_70;
-  mode5 = !!saved.mode5;
-  mode5_70 = !!saved.mode5_70;
+  filterAuto = !!saved.filterAuto;
+  filterSize = saved.filterSize || 'any';
+  filterHitRate = saved.filterHitRate || 'any';
+  filterScore = saved.filterScore || 'any';
   replay();
   if(saved.appOpen){
     document.getElementById('landing').style.display = 'none';
