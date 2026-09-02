@@ -119,7 +119,6 @@
   .timer-disp.timer-warn{ color: var(--loss); font-weight:700; opacity:1; animation: blinkWarn 0.8s steps(1) infinite; }
   button#submitRoundBtn.timer-done{ background: var(--loss); color:#fff; animation: blinkWarn 0.8s steps(1) infinite; }
   @keyframes blinkWarn{ 50% { opacity: 0.35; } }
-  input[readonly]{ opacity:0.55; }
   .bid-row{ display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-top:10px; }
   @media (max-width: 480px){ .bid-row{ grid-template-columns: 1fr; } }
   .bid-box{ display:flex; align-items:center; gap:6px; background: var(--flip-bg); border:1px solid var(--panel-line);
@@ -710,29 +709,19 @@ function buildBidRow(){
   });
 }
 
-function updateBidReadonlyFromQuickBid(){
-  const el = document.getElementById('quickBidAmount');
-  const hasValue = el.value !== '' && !isNaN(parseAmountInput(el.value));
-  ANIMALS.forEach(a=>{
-    const bidEl = document.getElementById('bid-'+a.code);
-    if(bidEl) bidEl.readOnly = hasValue;
-  });
-}
 function onQuickBidInput(){
   const el = document.getElementById('quickBidAmount');
   sanitizeAmountTyping(el);
-  updateBidReadonlyFromQuickBid();
 }
 
 function resetBidInputs(keepQuickBid){
   currentBids = {l:0,t:0,f:0,w:0,b:0,p:0};
   ANIMALS.forEach(a=>{
     const el = document.getElementById('bid-'+a.code);
-    if(el){ el.value = ''; el.readOnly = false; }
+    if(el){ el.value = ''; }
   });
   const quickEl = document.getElementById('quickBidAmount');
   if(quickEl && !keepQuickBid) quickEl.value = '';
-  if(keepQuickBid) updateBidReadonlyFromQuickBid();
 }
 
 function computeBalance(){
