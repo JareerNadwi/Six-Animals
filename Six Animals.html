@@ -172,11 +172,17 @@
           <div class="mini-box">
             <div class="mini-k">Balance</div>
             <div class="mini-v" id="balanceDisplay">0</div>
+            <button class="tiny ghost" type="button" onclick="toggleBalanceAdjust()" title="Add or subtract from balance">±</button>
           </div>
           <div class="mini-box">
             <div class="mini-k">Quick bid</div>
             <input type="text" inputmode="decimal" id="quickBidAmount" placeholder="amount" oninput="onQuickBidInput()">
           </div>
+        </div>
+        <div class="row" id="balanceAdjustRow" style="display:none; gap:8px; margin-top:8px;">
+          <input type="text" inputmode="decimal" id="balanceAdjustAmount" placeholder="amount" onkeydown="if(event.key==='Enter')applyBalanceAdjust(1)">
+          <button type="button" onclick="applyBalanceAdjust(1)">+ Add</button>
+          <button type="button" class="ghost" onclick="applyBalanceAdjust(-1)">− Subtract</button>
         </div>
         <div class="error" id="roundError"></div>
         <div class="bid-row" id="bidRow"></div>
@@ -282,6 +288,7 @@ let bidHistory = []; // independent, persistent betting record — survives "Cle
 let nextBidId = 1;
 let bidStatsWindow = 'all'; // independent window selector for the Bid Ledger
 let startingBalance = 0;
+let balanceAdjustments = []; // manual add/subtract entries: {round, amount} — amount signed
 let baselineFreq = null; // when set (by "Clear rounds"), replay() starts from this instead of seedLines
 let baselineGap = null;
 let selectedRanks = new Set([1]); // 1-indexed rank positions, drives board highlight + custom combo
@@ -727,12 +734,37 @@ function resetBidInputs(keepQuickBid){
 function computeBalance(){
   let net = 0;
   bidHistory.forEach(h=>{ net += h.bidNet || 0; });
-  return startingBalance + net;
+  const adjTotal = balanceAdjustments.reduce((s,a)=>s+a.amount, 0);
+  return startingBalance + net + adjTotal;
 }
 
 function renderBalance(){
   const el = document.getElementById('balanceDisplay');
   if(el) el.textContent = fmtDisplay(computeBalance());
+}
+
+function toggleBalanceAdjust(){
+  const row = document.getElementById('balanceAdjustRow');
+  const opening = row.style.display === 'none' || !row.style.display;
+  row.style.display = opening ? 'flex' : 'none';
+  if(opening){
+    const inp = document.getElementById('balanceAdjustAmount');
+    inp.value = '';
+    setTimeout(()=>inp.focus(), 0);
+  }
+}
+
+function applyBalanceAdjust(sign){
+  const inp = document.getElementById('balanceAdjustAmount');
+  const val = parseAmountInput(inp.value);
+  if(isNaN(val) || val <= 0) return;
+  // Tagged with the round about to be played, so the Bid Ledger's running "Balance"
+  // column can show the adjustment landing at the right point in history — not just
+  // the live total.
+  balanceAdjustments.push({round: state ? state.round : 1, amount: sign * val});
+  inp.value = '';
+  document.getElementById('balanceAdjustRow').style.display = 'none';
+  renderAll();
 }
 
 function submitRound(){
@@ -810,6 +842,8 @@ function attachAmountFormatting(el){
   });
 }
 attachAmountFormatting(document.getElementById('quickBidAmount'));
+attachAmountFormatting(document.getElementById('balanceAdjustAmount'));
+document.getElementById('balanceAdjustAmount').addEventListener('input', function(){ sanitizeAmountTyping(this); });
 
 function renderHistory(){
   const body = document.getElementById('historyBody');
@@ -1080,10 +1114,17 @@ function renderBidLedger(){
     return;
   }
   // Balance-after-round, computed from the full (unwindowed) bid history so it always
-  // matches the live Balance display regardless of which window is selected.
+  // matches the live Balance display regardless of which window is selected. Manual
+  // adjustments are folded in at the round they were made before, so history stays accurate.
   let cumulative = startingBalance;
   const balanceAtRound = {};
-  bidHistory.forEach(h=>{ cumulative += (h.bidNet || 0); balanceAtRound[h.round] = cumulative; });
+  const adjByRound = {};
+  balanceAdjustments.forEach(adj=>{ adjByRound[adj.round] = (adjByRound[adj.round]||0) + adj.amount; });
+  bidHistory.forEach(h=>{
+    if(adjByRound[h.round]) cumulative += adjByRound[h.round];
+    cumulative += (h.bidNet || 0);
+    balanceAtRound[h.round] = cumulative;
+  });
 
   let running = 0;
   const rowsHtml = rounds.map(h=>{
@@ -1149,7 +1190,7 @@ function cancelReset(){
 function resetAll(){
   clearInterval(roundTimerInterval);
   seedLines = []; roundsLog = []; bidIdLog = []; bidHistory = []; nextBidId = 1; bidStatsWindow = 'all';
-  baselineFreq = null; baselineGap = null; startingBalance = 0;
+  baselineFreq = null; baselineGap = null; startingBalance = 0; balanceAdjustments = [];
   selectedRanks = new Set([1]); filterAuto = false; filterSize = 'any'; filterHitRate = 'any'; filterScore = 'any';
   editingIndex=null; deletingIndex=null; state=null; statsWindow='all';
   resetBidInputs();
@@ -1198,6 +1239,7 @@ function clearRounds(){
     bidHistory = [];
     bidIdLog = [];
     nextBidId = 1;
+    balanceAdjustments = [];
   }
   replay();
   renderAll();
@@ -1227,7 +1269,7 @@ async function saveState(){
       seedLines, roundsLog, bidIdLog, bidHistory, nextBidId, bidStatsWindow,
       baselineFreq, baselineGap,
       selectedRanks: Array.from(selectedRanks),
-      statsWindow, appOpen, filterAuto, filterSize, filterHitRate, filterScore, startingBalance
+      statsWindow, appOpen, filterAuto, filterSize, filterHitRate, filterScore, startingBalance, balanceAdjustments
     };
     await new Promise((resolve, reject)=>{
       const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -1265,6 +1307,7 @@ async function restoreFromSave(){
   nextBidId = saved.nextBidId || 1;
   bidStatsWindow = saved.bidStatsWindow || 'all';
   startingBalance = saved.startingBalance || 0;
+  balanceAdjustments = saved.balanceAdjustments || [];
   baselineFreq = saved.baselineFreq || null;
   baselineGap = saved.baselineGap || null;
   selectedRanks = new Set(saved.selectedRanks && saved.selectedRanks.length ? saved.selectedRanks : [1]);
