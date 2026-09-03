@@ -99,6 +99,8 @@
   .combo-label b{ color: var(--brass); }
   footer{ text-align:center; color: var(--cream-dim); font-size: 11px; margin-top: 30px; }
   .empty{ color: var(--cream-dim); font-size: 12.5px; padding: 14px; text-align:center; }
+  .ledger-adjust-row td{ background: rgba(201,162,39,0.06); color: var(--cream-dim); font-size: 12px;
+    text-align:center; font-style:italic; padding: 8px; }
   .edit-row input{ width: 140px; }
   .edit-form{ display:flex; flex-direction:column; gap:6px; align-items:flex-start; }
   .edit-bids{ display:flex; gap:6px; flex-wrap:wrap; }
@@ -1107,12 +1109,8 @@ function renderMultiplierSummary(){
 }
 
 function renderBidLedger(){
-  const rounds = bidWindowedHistory().filter(h => ANIMALS.some(a => h.bids && h.bids[a.code] > 0));
+  const allWindowed = bidWindowedHistory();
   const body = document.getElementById('bidLedgerBody');
-  if(rounds.length===0){
-    body.innerHTML = '<tr><td colspan="6" class="empty">No bids placed yet.</td></tr>';
-    return;
-  }
   // Balance-after-round, computed from the full (unwindowed) bid history so it always
   // matches the live Balance display regardless of which window is selected. Manual
   // adjustments are folded in at the round they were made before, so history stays accurate.
@@ -1127,8 +1125,17 @@ function renderBidLedger(){
   });
 
   let running = 0;
-  const rowsHtml = rounds.map(h=>{
+  const rowsHtml = [];
+  allWindowed.forEach(h=>{
+    // Adjustment markers get their own row for every round they're tied to, even a
+    // round where no bid was placed — otherwise the balance jump has nothing to explain it.
+    const adj = adjByRound[h.round];
+    if(adj){
+      const adjCls = adj>0?'pos':(adj<0?'neg':'');
+      rowsHtml.push(`<tr class="ledger-adjust-row"><td colspan="6">Balance adjustment <span class="${adjCls}">${adj>0?'+':''}${fmtDisplay(adj)}</span></td></tr>`);
+    }
     const hadAnyBid = ANIMALS.some(a=>(h.bids && h.bids[a.code] > 0));
+    if(!hadAnyBid) return; // ledger's per-round data rows stay scoped to rounds you actually bet on
     const bidParts = ANIMALS.filter(a=>(h.bids && h.bids[a.code] > 0)).map(a=>{
       const hit = h.actual[a.code] !== undefined;
       return `<span class="${hit?'pos':'neg'}">${a.name[0]}:${fmtDisplay(h.bids[a.code])}</span>`;
@@ -1142,9 +1149,9 @@ function renderBidLedger(){
     const net = h.bidNet || 0;
     running += net;
     const bal = balanceAtRound[h.round];
-    return `<tr><td>${h.round}</td><td>${bidStr}</td><td>${actualStr}</td><td class="${ptsClass(net)}">${fmtDisplay(net)}</td><td class="${ptsClass(running)}">${fmtDisplay(running)}</td><td class="${ptsClass(bal-startingBalance)}">${fmtDisplay(bal)}</td></tr>`;
+    rowsHtml.push(`<tr><td>${h.round}</td><td>${bidStr}</td><td>${actualStr}</td><td class="${ptsClass(net)}">${fmtDisplay(net)}</td><td class="${ptsClass(running)}">${fmtDisplay(running)}</td><td class="${ptsClass(bal-startingBalance)}">${fmtDisplay(bal)}</td></tr>`);
   });
-  body.innerHTML = rowsHtml.join('');
+  body.innerHTML = rowsHtml.length ? rowsHtml.join('') : '<tr><td colspan="6" class="empty">No bids placed yet.</td></tr>';
 }
 
 function buildBidWindowPicker(){
