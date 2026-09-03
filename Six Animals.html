@@ -1124,7 +1124,15 @@ function renderBidLedger(){
     balanceAtRound[h.round] = cumulative;
   });
 
+  // Seed prevBal to the true balance immediately before this window starts — not the
+  // raw starting balance — so a windowed view (e.g. "Last 10%") still colors its first
+  // row correctly instead of comparing against a stale pre-history baseline.
   let running = 0;
+  let prevBal = startingBalance;
+  if(allWindowed.length > 0){
+    const fullIdx = bidHistory.findIndex(h=>h.round === allWindowed[0].round);
+    if(fullIdx > 0) prevBal = balanceAtRound[bidHistory[fullIdx-1].round];
+  }
   const rowsHtml = [];
   allWindowed.forEach(h=>{
     // Adjustment markers get their own row for every round they're tied to, even a
@@ -1135,7 +1143,7 @@ function renderBidLedger(){
       rowsHtml.push(`<tr class="ledger-adjust-row"><td colspan="6">Balance adjustment <span class="${adjCls}">${adj>0?'+':''}${fmtDisplay(adj)}</span></td></tr>`);
     }
     const hadAnyBid = ANIMALS.some(a=>(h.bids && h.bids[a.code] > 0));
-    if(!hadAnyBid) return; // ledger's per-round data rows stay scoped to rounds you actually bet on
+    if(!hadAnyBid){ prevBal = balanceAtRound[h.round]; return; } // ledger's per-round data rows stay scoped to rounds you actually bet on
     const bidParts = ANIMALS.filter(a=>(h.bids && h.bids[a.code] > 0)).map(a=>{
       const hit = h.actual[a.code] !== undefined;
       return `<span class="${hit?'pos':'neg'}">${a.name[0]}:${fmtDisplay(h.bids[a.code])}</span>`;
@@ -1149,7 +1157,11 @@ function renderBidLedger(){
     const net = h.bidNet || 0;
     running += net;
     const bal = balanceAtRound[h.round];
-    rowsHtml.push(`<tr><td>${h.round}</td><td>${bidStr}</td><td>${actualStr}</td><td class="${ptsClass(net)}">${fmtDisplay(net)}</td><td class="${ptsClass(running)}">${fmtDisplay(running)}</td><td class="${ptsClass(bal-startingBalance)}">${fmtDisplay(bal)}</td></tr>`);
+    // Balance colors on whether it moved up/down from the row before it — not on
+    // whether it's above where you started, which would mix in the manual adjustments.
+    const balCls = ptsClass(bal - prevBal);
+    prevBal = bal;
+    rowsHtml.push(`<tr><td>${h.round}</td><td>${bidStr}</td><td>${actualStr}</td><td class="${ptsClass(net)}">${fmtDisplay(net)}</td><td class="${ptsClass(running)}">${fmtDisplay(running)}</td><td class="${balCls}">${fmtDisplay(bal)}</td></tr>`);
   });
   body.innerHTML = rowsHtml.length ? rowsHtml.join('') : '<tr><td colspan="6" class="empty">No bids placed yet.</td></tr>';
 }
