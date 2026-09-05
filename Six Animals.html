@@ -757,10 +757,12 @@ function applyBalanceAdjust(sign){
   const inp = document.getElementById('balanceAdjustAmount');
   const val = parseAmountInput(inp.value);
   if(isNaN(val) || val <= 0) return;
-  // Tagged with the round about to be played, so the Bid Ledger's running "Balance"
-  // column can show the adjustment landing at the right point in history — not just
-  // the live total.
-  balanceAdjustments.push({round: state ? state.round : 1, amount: sign * val});
+  // Tagged with the Bid Ledger's OWN round counter (bidHistory.length+1) — the same value
+  // the next submitted round will be numbered — not state.round. state.round comes from the
+  // separate dice-frequency engine and only happens to match the ledger's numbering during
+  // unbroken play; after a reset/reload/edit it can drift, which used to make adjustments
+  // land at the wrong point (even round 1) in the ledger.
+  balanceAdjustments.push({round: bidHistory.length + 1, amount: sign * val});
   inp.value = '';
   document.getElementById('balanceAdjustRow').style.display = 'none';
   renderAll();
@@ -1169,6 +1171,17 @@ function renderBidLedger(){
     rowsHtml.push(`<tr><td>${h.round}</td><td>${bidStr}</td><td>${actualStr}</td><td class="${ptsClass(net)}">${fmtDisplay(net)}</td><td class="${ptsClass(running)}">${fmtDisplay(running)}</td><td class="${balCls}">${fmtDisplay(bal)}</td></tr>`);
   });
   if(!hasRoundRows) rowsHtml.push('<tr><td colspan="6" class="empty">No bids placed yet.</td></tr>');
+  // An adjustment tagged for a round that hasn't been played yet (you just clicked +/-
+  // and haven't submitted another round since) never matches an h.round above, so it
+  // would otherwise disappear silently. Show it once at the end, regardless of which
+  // window is selected, since it's always the most recent event.
+  const playedRounds = new Set(bidHistory.map(h=>h.round));
+  const pendingRounds = Object.keys(adjByRound).map(Number).filter(r=>!playedRounds.has(r)).sort((a,b)=>a-b);
+  pendingRounds.forEach(r=>{
+    const adj = adjByRound[r];
+    const adjCls = adj>0?'pos':(adj<0?'neg':'');
+    rowsHtml.push(`<tr class="ledger-adjust-row"><td colspan="6">Balance adjustment <span class="${adjCls}">${adj>0?'+':''}${fmtDisplay(adj)}</span></td></tr>`);
+  });
   body.innerHTML = rowsHtml.join('');
 }
 
