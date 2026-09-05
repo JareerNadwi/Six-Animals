@@ -93,8 +93,6 @@
   .stat-card .k{ font-family: var(--display); text-transform:uppercase; font-size: 10.5px; color: var(--cream-dim); letter-spacing:0.06em; }
   .stat-card .v{ font-size: 20px; margin-top: 4px; font-weight:700; }
   .stat-card .v.pos{ color: var(--win); } .stat-card .v.neg{ color: var(--loss); }
-  .bid-cards-row{ display:flex; justify-content:center; align-items:stretch; gap:10px; margin-top:10px; flex-wrap:wrap; }
-  .bid-cards-row .stat-card{ flex:0 0 auto; text-align:center; }
   .combo-label{ font-size: 12px; color: var(--cream-dim); }
   .combo-label b{ color: var(--brass); }
   footer{ text-align:center; color: var(--cream-dim); font-size: 11px; margin-top: 30px; }
@@ -225,7 +223,6 @@
     <div class="panel">
       <div class="panel-title">Points by depth</div>
       <div class="stat-grid" id="pointsGrid"></div>
-      <div class="bid-cards-row" id="bidCardsRow"></div>
     </div>
 
     <div class="panel">
@@ -828,26 +825,35 @@ function formatAmountForInput(v){
     : intPart;
   return (neg?'-':'') + grouped + (decPart !== undefined ? '.'+decPart : '');
 }
+// Reassigning el.value always snaps the caret to the end of the field, no matter where it
+// was — that's true whether we do it on focus or mid-keystroke. So any time we strip
+// characters out of the value, we work out how many "kept" characters sat before the caret
+// beforehand, and put the caret back at that same offset in the new value afterward. Applied
+// consistently, this survives inserts, deletes, and full select-and-replace/cut edits alike.
+function stripPreservingCaret(el, stripFn){
+  const pos = el.selectionStart != null ? el.selectionStart : el.value.length;
+  const keepMask = c => /[\d.]/.test(c);
+  const digitsBefore = el.value.slice(0, pos).split('').filter(keepMask).length;
+  const stripped = stripFn(el.value);
+  if(stripped !== el.value){
+    el.value = stripped;
+    el.setSelectionRange(digitsBefore, digitsBefore);
+  }
+  return stripped;
+}
 function sanitizeAmountTyping(el){
-  let v = el.value.replace(/[^\d.]/g,'');
-  const firstDot = v.indexOf('.');
-  if(firstDot !== -1){ v = v.slice(0,firstDot+1) + v.slice(firstDot+1).replace(/\./g,''); }
-  if(v !== el.value) el.value = v;
-  return v;
+  return stripPreservingCaret(el, (raw)=>{
+    let v = raw.replace(/[^\d.]/g,'');
+    const firstDot = v.indexOf('.');
+    if(firstDot !== -1){ v = v.slice(0,firstDot+1) + v.slice(firstDot+1).replace(/\./g,''); }
+    return v;
+  });
 }
 function attachAmountFormatting(el){
   if(!el) return;
   el.addEventListener('focus', ()=>{
     if(el.value.indexOf(',') === -1) return; // nothing to strip, leave the tap-placed cursor alone
-    // Re-reading selectionStart on the same tick that focus fires is unreliable on mobile —
-    // the browser hasn't always finished placing the caret from the tap yet. Deferring one
-    // frame lets us read where the tap actually landed before we touch the value.
-    requestAnimationFrame(()=>{
-      const pos = el.selectionStart != null ? el.selectionStart : el.value.length;
-      const digitsBefore = el.value.slice(0, pos).replace(/[^\d.]/g,'').length;
-      el.value = el.value.replace(/,/g,'');
-      el.setSelectionRange(digitsBefore, digitsBefore);
-    });
+    stripPreservingCaret(el, (raw)=>raw.replace(/,/g,''));
   });
   el.addEventListener('blur', ()=>{
     const num = parseAmountInput(el.value);
@@ -1047,8 +1053,7 @@ function renderStats(){
     html += `<div class="stat-card"><div class="k">Best combo</div><div class="v">—</div></div>`;
   }
 
-  grid.innerHTML = html;
-  renderBidCards();
+  grid.innerHTML = html + bidCardsHTML();
 }
 
 function bidWindowedHistory(){
@@ -1056,8 +1061,7 @@ function bidWindowedHistory(){
   return bidHistory.slice(-bidStatsWindow);
 }
 
-function renderBidCards(){
-  const row = document.getElementById('bidCardsRow');
+function bidCardsHTML(){
   const rounds = bidWindowedHistory();
   let bidTotal = 0, totalWagered = 0;
   rounds.forEach(h=>{
@@ -1070,28 +1074,11 @@ function renderBidCards(){
   // not a cost against it.
   const overallResult = bidTotal + trails;
   const overallCls = overallResult>0?'pos':(overallResult<0?'neg':'');
-  row.innerHTML =
-    `<div class="stat-card"><div class="k">Total bids</div><div class="v">${fmtDisplay(totalWagered)}</div></div>
+  return `<div class="stat-card"><div class="k">Total bids</div><div class="v">${fmtDisplay(totalWagered)}</div></div>
      <div class="stat-card"><div class="k">Your bids (won/lost)</div><div class="v ${bidCls}">${bidTotal>0?'+':''}${fmtDisplay(bidTotal)}</div></div>
      <div class="stat-card"><div class="k">Trails</div><div class="v">${fmtDisplay(trails)}</div></div>
      <div class="stat-card"><div class="k">Overall result</div><div class="v ${overallCls}">${overallResult>0?'+':''}${fmtDisplay(overallResult)}</div></div>`;
-  matchBidCardWidthToPointsGrid();
 }
-
-// Keeps the centered "Your bids"/"Trails" cards pixel-identical in width to the
-// #pointsGrid cards above, whose width is set by a responsive auto-fit grid (so it
-// changes with screen size). Reading the real rendered width here — rather than
-// guessing a fixed px value — is what keeps the two rows matching at every size.
-function matchBidCardWidthToPointsGrid(){
-  const sample = document.querySelector('#pointsGrid .stat-card');
-  const row = document.getElementById('bidCardsRow');
-  if(!sample || !row) return;
-  const w = sample.getBoundingClientRect().width;
-  if(w > 0){
-    row.querySelectorAll('.stat-card').forEach(card=>{ card.style.width = w + 'px'; });
-  }
-}
-window.addEventListener('resize', ()=>{ if(document.getElementById('bidCardsRow')) matchBidCardWidthToPointsGrid(); });
 
 function patternLabel(values){
   const counts = {};
@@ -1194,7 +1181,7 @@ function buildBidWindowPicker(){
     const btn = document.createElement('button');
     btn.className = 'chip' + (bidStatsWindow === opt ? ' active' : '');
     btn.textContent = opt==='all' ? 'All' : opt;
-    btn.onclick = ()=>{ bidStatsWindow = opt; renderBidLedger(); renderBidCards(); buildBidWindowPicker(); scrollBidLedgerToLatest(); saveState(); };
+    btn.onclick = ()=>{ bidStatsWindow = opt; renderBidLedger(); renderStats(); buildBidWindowPicker(); scrollBidLedgerToLatest(); saveState(); };
     wrap.appendChild(btn);
   });
 }
