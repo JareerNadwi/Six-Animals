@@ -837,7 +837,18 @@ function sanitizeAmountTyping(el){
 }
 function attachAmountFormatting(el){
   if(!el) return;
-  el.addEventListener('focus', ()=>{ el.value = el.value.replace(/,/g,''); });
+  el.addEventListener('focus', ()=>{
+    if(el.value.indexOf(',') === -1) return; // nothing to strip, leave the tap-placed cursor alone
+    // Re-reading selectionStart on the same tick that focus fires is unreliable on mobile —
+    // the browser hasn't always finished placing the caret from the tap yet. Deferring one
+    // frame lets us read where the tap actually landed before we touch the value.
+    requestAnimationFrame(()=>{
+      const pos = el.selectionStart != null ? el.selectionStart : el.value.length;
+      const digitsBefore = el.value.slice(0, pos).replace(/[^\d.]/g,'').length;
+      el.value = el.value.replace(/,/g,'');
+      el.setSelectionRange(digitsBefore, digitsBefore);
+    });
+  });
   el.addEventListener('blur', ()=>{
     const num = parseAmountInput(el.value);
     el.value = isNaN(num) ? '' : formatAmountForInput(num);
@@ -1055,9 +1066,15 @@ function renderBidCards(){
   });
   const bidCls = bidTotal>0?'pos':(bidTotal<0?'neg':'');
   const trails = totalWagered * 0.025;
+  // Trail is commission earned on volume wagered — it's income on top of the bid win/loss,
+  // not a cost against it.
+  const overallResult = bidTotal + trails;
+  const overallCls = overallResult>0?'pos':(overallResult<0?'neg':'');
   row.innerHTML =
-    `<div class="stat-card"><div class="k">Your bids (won/lost)</div><div class="v ${bidCls}">${bidTotal>0?'+':''}${fmtDisplay(bidTotal)}</div></div>
-     <div class="stat-card"><div class="k">Trails</div><div class="v">${fmtDisplay(trails)}</div></div>`;
+    `<div class="stat-card"><div class="k">Total bids</div><div class="v">${fmtDisplay(totalWagered)}</div></div>
+     <div class="stat-card"><div class="k">Your bids (won/lost)</div><div class="v ${bidCls}">${bidTotal>0?'+':''}${fmtDisplay(bidTotal)}</div></div>
+     <div class="stat-card"><div class="k">Trails</div><div class="v">${fmtDisplay(trails)}</div></div>
+     <div class="stat-card"><div class="k">Overall result</div><div class="v ${overallCls}">${overallResult>0?'+':''}${fmtDisplay(overallResult)}</div></div>`;
   matchBidCardWidthToPointsGrid();
 }
 
